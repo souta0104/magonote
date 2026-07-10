@@ -1,0 +1,18 @@
+import Foundation
+
+/// Shared JSON coding used by all MagonoteKit API calls. The magonote API
+/// serializes timestamps as unix milliseconds and uses camelCase keys
+/// natively, so no key conversion strategy is needed.
+enum JSONCoding {
+    static let apiDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .millisecondsSince1970
+        return decoder
+    }()
+
+    static let apiEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        return encoder
+    }()
+}
