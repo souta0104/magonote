@@ -1,0 +1,26 @@
+{
+  "name": "magonote-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "types": "wrangler types",
+    "migrate:local": "wrangler d1 migrations apply magonote --local",
+    "migrate:remote": "wrangler d1 migrations apply magonote --remote"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.8.0",
+    "firebase-auth-cloudflare-workers": "^2.0.6",
+    "hono": "^4.12.29",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.110.0"
+  }
+}
