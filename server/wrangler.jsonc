@@ -10,8 +10,7 @@
     {
       "binding": "DB",
       "database_name": "magonote",
-      "database_id": "41f05f08-1fe8-48e7-ba4d-1f86e032d6e2",
-      "migrations_dir": "./migrations"
+      "database_id": "41f05f08-1fe8-48e7-ba4d-1f86e032d6e2"
     }
   ],
   "kv_namespaces": [

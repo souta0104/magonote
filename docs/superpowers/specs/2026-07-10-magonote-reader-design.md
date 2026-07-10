@@ -84,7 +84,8 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
 ├── server/                        # magonote API (全ツール共通の 1 Worker)
 │   ├── wrangler.jsonc             # d1 binding: DB, kv binding: FIREBASE_CERT_CACHE, vars: FIREBASE_PROJECT_ID
 │   ├── package.json / tsconfig.json / vitest.config.ts
-│   ├── migrations/0001_reader.sql
+│   ├── schema.sql                 # D1 スキーマの正 (sqlite3def で宣言的に適用)
+│   ├── scripts/                   # sqlite3def 適用スクリプト (db-apply.sh)
 │   ├── src/
 │   │   ├── index.ts               # createApp(realVerifier) を export
 │   │   ├── app.ts                 # createApp(deps) ファクトリ (テストの唯一の seam)
@@ -121,14 +122,16 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
         └── GoogleService-Info.plist   # git-ignore
 ```
 
-## D1 スキーマ (migrations/0001_reader.sql)
+## D1 スキーマ (server/schema.sql)
 
-テーブルはツール名 prefix で名前空間を切る (次ツールは別 migration で `<tool>_...` を追加)。
+テーブルはツール名 prefix で名前空間を切る (次ツールは同じ schema.sql に `<tool>_...` を追加)。
+schema.sql が D1 スキーマの正 (source of truth) であり、sqlite3def で宣言的に適用する
+(wrangler 自体の migrations の仕組みは使わない)。
 
 ```sql
 CREATE TABLE reader_documents (
   id                  TEXT PRIMARY KEY,   -- crypto.randomUUID()、サーバー生成
-  text                TEXT NOT NULL,
+  "text"              TEXT NOT NULL,      -- sqlite3def v3.11.13 の型キーワードとの列名衝突回避のため quote 必須
   source_app_name     TEXT NOT NULL,      -- Capture 時の最前面アプリ (Source)
   source_machine_name TEXT NOT NULL,      -- hostname (Source)
   captured_at         INTEGER NOT NULL,   -- unix ms、クライアント時刻
@@ -148,9 +151,18 @@ CREATE TABLE reader_comments (
   created_at   INTEGER NOT NULL,
   archived_at  INTEGER
 );
-CREATE INDEX idx_reader_comments_by_document
-  ON reader_comments (document_id, created_at ASC);
+CREATE INDEX idx_reader_comments_active_by_document
+  ON reader_comments (document_id, created_at ASC) WHERE archived_at IS NULL;
 ```
+
+適用フロー (`server/scripts/db-apply.sh`、`sqlite3def` (Homebrew: `sqldef/sqldef/sqlite3def`) が必要):
+
+- ローカル: ローカル D1 の実 sqlite ファイルに対する現行スキーマを `wrangler d1 export --local --no-data`
+  で取得し、sqlite3def のオフライン diff モード (`sqlite3def current.sql --file schema.sql`) で
+  差分 DDL を生成、`wrangler d1 execute --local` で適用する (`npm run db:apply:local`)
+- リモート: 同様に `wrangler d1 export --remote --no-data` → オフライン diff → `wrangler d1 execute
+  --remote` で適用する (`npm run db:diff:remote` で差分確認のみ、`npm run db:apply:remote` で適用)
+- wrangler 自体の migrations 機能 (`wrangler d1 migrations apply`) は使わない
 
 ## REST API
 
@@ -205,11 +217,14 @@ max-age キャッシュを実装済み。cert キャッシュに KV namespace (b
     limit+1 件 fetch、preview は SQL の `substr(text, 1, 300)`
   - `getDocument(db, id): Promise<Document | null>`
   - `setDocumentArchived(db, id, archivedAt: number | null): Promise<Document | null>` —
-    UPDATE 後に SELECT で返す。冪等 (既に同状態でも 200)
+    `UPDATE ... RETURNING *` で 1 クエリで更新後の行を返す (get→update→get の 3 クエリにしない)。
+    冪等 (既に同状態でも 200)
   - `insertComment(db, documentId, input: { body, quote? }): Promise<Comment>` —
     事前に document の存在チェック (なければ null を返し route が 404)
-  - `listComments(db, documentId, includeArchived: boolean): Promise<Comment[]>`
-  - `setCommentArchived(db, id, archivedAt: number | null): Promise<Comment | null>`
+  - `listComments(db, documentId, includeArchived: boolean): Promise<Comment[] | null>` —
+    document が存在しなければ null (`insertComment` と同じパターンで route が 404)
+  - `setCommentArchived(db, id, archivedAt: number | null): Promise<Comment | null>` —
+    `setDocumentArchived` と同様 `UPDATE ... RETURNING *` で 1 クエリ化
 - tools/reader/schemas.ts (zod、境界での検証を全部ここに集約):
   - `createDocumentSchema = z.object({ text: z.string().min(1).max(500_000), sourceAppName: z.string().min(1).max(200), sourceMachineName: z.string().min(1).max(200), capturedAt: z.number().int().positive() })`
   - `listDocumentsQuerySchema = z.object({ filter: z.enum(['active','archived']).default('active'), limit: z.coerce.number().int().min(1).max(100).default(30), cursor: z.string().optional() })`
@@ -230,13 +245,17 @@ max-age キャッシュを実装済み。cert キャッシュに KV namespace (b
 ### package.json scripts
 
 `dev` (wrangler dev)、`deploy` (wrangler deploy)、`test` (vitest run)、
-`types` (wrangler types)、`migrate:local` / `migrate:remote` (wrangler d1 migrations apply)
+`types` (wrangler types)、`db:apply:local` / `db:diff:remote` / `db:apply:remote`
+(sqlite3def ベースのスキーマ適用、`scripts/db-apply.sh` 経由)
 
 ### テスト設計
 
-- vitest.config.ts: defineWorkersConfig + `wrangler: { configPath: './wrangler.jsonc' }` +
-  miniflare bindings で ALLOWED_UID=test-uid。setup ファイルで `applyD1Migrations` (cloudflare:test)、
-  isolatedStorage: true で各テストが独立 DB
+- vitest.config.ts: `cloudflareTest()` プラグイン + `wrangler: { configPath: './wrangler.jsonc' }` +
+  miniflare bindings で ALLOWED_UID=test-uid。Node の `fs` で `schema.sql` を読み、内容を
+  `TEST_SCHEMA_SQL` binding として渡す。setup ファイル (test/setup.ts) で、まだ適用されていなければ
+  (sqlite_master に reader_documents テーブルが無ければ) `TEST_SCHEMA_SQL` を `;` 区切りで
+  statement ごとに `env.DB.prepare(stmt).run()` して適用する (migrations の仕組みは使わないため
+  自前の冪等ガード)。isolatedStorage: true で各テストが独立 DB
 - テストは `createApp(stubVerifier)` に直接 request する。stub は
   「固定 uid を返す」「常に throw する」の 2 種を用意し、Google の cert エンドポイントは一切モックしない
 - test/auth.test.ts: ヘッダなし 401 / `Bearer ` でない形式 401 / verify throw で 401 /
@@ -450,8 +469,8 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
   (com.souta0104.magonote.ios / com.souta0104.magonote.mac) → plist 2 つダウンロード配置。
   Cloudflare: wrangler login → d1 create magonote → kv namespace create FIREBASE_CERT_CACHE →
   id を wrangler.jsonc に記入 → ALLOWED_UID は仮値で secret put (DEV-6 で実 UID に更新) + .dev.vars
-- DEV-4 Backend: migration → db.ts → tools/reader/ → auth.ts → app.ts/index.ts → tests。
-  検証: npm test green / wrangler d1 migrations apply --local + wrangler dev で /api/health curl /
+- DEV-4 Backend: schema.sql → db.ts → tools/reader/ → auth.ts → app.ts/index.ts → tests。
+  検証: npm test green / npm run db:apply:local + wrangler dev で /api/health curl /
   wrangler deploy して prod /api/health curl。実 token での検証は DEV-6 の初 POST で行う
 - DEV-5 MagonoteKit: models → client → URLProtocol tests。検証: swift test
 - DEV-6 macOS アプリ: (1) XcodeGen skeleton + MenuBarExtra 起動 →
