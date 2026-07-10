@@ -68,6 +68,9 @@ export const readerRoutes = new Hono<{ Bindings: Env }>()
   .get('/documents/:id/comments', zv('query', listCommentsQuerySchema), async (c) => {
     const { includeArchived } = c.req.valid('query');
     const comments = await listComments(c.env.DB, c.req.param('id'), includeArchived);
+    if (!comments) {
+      throw notFound('document');
+    }
     return c.json({ comments }, 200);
   })
   .post('/documents/:id/comments', zv('json', createCommentSchema), async (c) => {

@@ -193,14 +193,16 @@ export async function setDocumentArchived(
   id: string,
   archivedAt: number | null,
 ): Promise<Document | null> {
-  const existing = await getDocument(db, id);
-  if (!existing) {
-    return null;
-  }
+  const row = await db
+    .prepare(
+      `UPDATE reader_documents SET archived_at = ?
+       WHERE id = ?
+       RETURNING id, text, source_app_name, source_machine_name, captured_at, created_at, archived_at`,
+    )
+    .bind(archivedAt, id)
+    .first<DocumentRow>();
 
-  await db.prepare(`UPDATE reader_documents SET archived_at = ? WHERE id = ?`).bind(archivedAt, id).run();
-
-  return getDocument(db, id);
+  return row ? toDocument(row) : null;
 }
 
 export interface InsertCommentInput {
@@ -244,7 +246,12 @@ export async function listComments(
   db: D1Database,
   documentId: string,
   includeArchived: boolean,
-): Promise<Comment[]> {
+): Promise<Comment[] | null> {
+  const document = await getDocument(db, documentId);
+  if (!document) {
+    return null;
+  }
+
   const where = includeArchived
     ? 'document_id = ?'
     : 'document_id = ? AND archived_at IS NULL';
@@ -262,29 +269,19 @@ export async function listComments(
   return (results ?? []).map(toComment);
 }
 
-async function getComment(db: D1Database, id: string): Promise<Comment | null> {
-  const row = await db
-    .prepare(
-      `SELECT id, document_id, body, quote, created_at, archived_at
-       FROM reader_comments WHERE id = ?`,
-    )
-    .bind(id)
-    .first<CommentRow>();
-
-  return row ? toComment(row) : null;
-}
-
 export async function setCommentArchived(
   db: D1Database,
   id: string,
   archivedAt: number | null,
 ): Promise<Comment | null> {
-  const existing = await getComment(db, id);
-  if (!existing) {
-    return null;
-  }
+  const row = await db
+    .prepare(
+      `UPDATE reader_comments SET archived_at = ?
+       WHERE id = ?
+       RETURNING id, document_id, body, quote, created_at, archived_at`,
+    )
+    .bind(archivedAt, id)
+    .first<CommentRow>();
 
-  await db.prepare(`UPDATE reader_comments SET archived_at = ? WHERE id = ?`).bind(archivedAt, id).run();
-
-  return getComment(db, id);
+  return row ? toComment(row) : null;
 }

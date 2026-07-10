@@ -104,6 +104,14 @@ describe('POST /api/reader/documents/:id/comments', () => {
 });
 
 describe('GET /api/reader/documents/:id/comments', () => {
+  it('returns 404 when the document does not exist', async () => {
+    const missingId = crypto.randomUUID();
+    const res = await app.request(`/api/reader/documents/${missingId}/comments`, { headers: AUTH_HEADER }, env);
+    expect(res.status).toBe(404);
+    const body = await readJson<ErrorEnvelope>(res);
+    expect(body.error.code).toBe('not_found');
+  });
+
   it('lists comments oldest first', async () => {
     const doc = await createDocument();
     const c1 = await readJson<CommentJson>(await createComment(doc.id, { body: 'first' }));

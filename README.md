@@ -29,3 +29,6 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 - `apps/ios/GoogleService-Info.plist`
 - `apps/macos/GoogleService-Info.plist`
 - `server/.dev.vars`
+
+D1 のスキーマ (`server/schema.sql`) の適用には `sqlite3def` が必要
+(`brew install sqldef/sqldef/sqlite3def`)。
