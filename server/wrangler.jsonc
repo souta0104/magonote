@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "magonote-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "magonote",
+      "database_id": "41f05f08-1fe8-48e7-ba4d-1f86e032d6e2",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "FIREBASE_CERT_CACHE",
+      "id": "ebf6e934b77c4aa3998288458af507e1"
+    }
+  ],
+  "vars": {
+    "FIREBASE_PROJECT_ID": "magonote-souta0104"
+  }
+}
