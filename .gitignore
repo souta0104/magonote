@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Xcode / XcodeGen
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# Firebase config (public repo — keep these out even though they aren't strictly secret)
+GoogleService-Info.plist
+
+# Node / Cloudflare Workers
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+
+# Swift
+.build/
+.swiftpm/
