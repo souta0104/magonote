@@ -8,7 +8,7 @@ private let stubIDHeaderField = "X-MagonoteKitTests-Stub-Id"
 
 /// A `URLProtocol` stub that intercepts every request made through a session
 /// configured with it, and dispatches to the handler registered for that
-/// session's stub id (see `makeStubbedClient`). Handler storage is guarded by
+/// session's stub id (see `withStubbedClient`). Handler storage is guarded by
 /// a lock so concurrently-running tests never observe each other's handlers.
 final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
@@ -20,6 +20,12 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         handlers[id] = handler
+    }
+
+    static func unregister(id: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        handlers[id] = nil
     }
 
     private static func handler(for id: String) -> Handler? {
@@ -84,25 +90,29 @@ struct StubTokenProvider: AuthTokenProvider {
     }
 }
 
-/// Builds a `MagonoteAPIClient` whose session routes every request to `handler`,
-/// isolated from any other test's stub via a per-client stub id.
-func makeStubbedClient(
+/// Registers a stub handler for the lifetime of `body` and always unregisters it
+/// afterwards, so the static handler table never grows across the test suite.
+func withStubbedClient<R>(
+    baseURL: URL = URL(string: "https://api.magonote.example")!,
     token: String = "stub-token",
-    handler: @escaping StubURLProtocol.Handler
-) -> MagonoteAPIClient {
+    handler: @escaping StubURLProtocol.Handler,
+    _ body: (MagonoteAPIClient) async throws -> R
+) async rethrows -> R {
     let stubID = UUID().uuidString
     StubURLProtocol.register(id: stubID, handler: handler)
+    defer { StubURLProtocol.unregister(id: stubID) }
 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [StubURLProtocol.self]
     configuration.httpAdditionalHeaders = [stubIDHeaderField: stubID]
     let session = URLSession(configuration: configuration)
 
-    return MagonoteAPIClient(
-        baseURL: URL(string: "https://api.magonote.example")!,
+    let client = MagonoteAPIClient(
+        baseURL: baseURL,
         tokenProvider: StubTokenProvider(token: token),
         session: session
     )
+    return try await body(client)
 }
 
 func jsonResponse(url: URL, statusCode: Int, object: [String: Any?]) -> (HTTPURLResponse, Data) {

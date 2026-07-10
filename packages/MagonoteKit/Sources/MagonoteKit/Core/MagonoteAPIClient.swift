@@ -44,7 +44,13 @@ public struct MagonoteAPIClient: Sendable {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
             throw APIError.network(URLError(.badURL))
         }
-        components.path += path
+        // baseURL に末尾スラッシュがあっても "//api/..." にならないよう、結合前に取り除く
+        // (path 引数は常に "/" 始まり)
+        var basePath = components.path
+        while basePath.hasSuffix("/") {
+            basePath.removeLast()
+        }
+        components.path = basePath + path
         if !query.isEmpty {
             components.queryItems = query
         }

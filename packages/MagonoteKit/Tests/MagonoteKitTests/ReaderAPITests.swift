@@ -6,20 +6,20 @@ struct ReaderAPITests {
     @Test
     func createDocumentSendsExpectedRequestBody() async throws {
         let recorder = RequestRecorder()
-        let client = makeStubbedClient { request in
+        try await withStubbedClient(handler: { request in
             recorder.record(request)
             return jsonResponse(url: request.url!, statusCode: 201, object: documentJSONObject())
+        }) { client in
+            let capturedAt = Date(timeIntervalSince1970: Double(sampleCapturedAtMillis) / 1000)
+            let newDocument = NewDocument(
+                text: "captured text",
+                sourceAppName: "Xcode",
+                sourceMachineName: "MacBook-Pro",
+                capturedAt: capturedAt
+            )
+
+            _ = try await client.createDocument(newDocument)
         }
-
-        let capturedAt = Date(timeIntervalSince1970: Double(sampleCapturedAtMillis) / 1000)
-        let newDocument = NewDocument(
-            text: "captured text",
-            sourceAppName: "Xcode",
-            sourceMachineName: "MacBook-Pro",
-            capturedAt: capturedAt
-        )
-
-        _ = try await client.createDocument(newDocument)
 
         let request = try #require(recorder.request)
         #expect(request.httpMethod == "POST")
@@ -38,7 +38,7 @@ struct ReaderAPITests {
 
     @Test
     func listDocumentsDecodesPageEnvelope() async throws {
-        let client = makeStubbedClient { request in
+        let page = try await withStubbedClient(handler: { request in
             jsonResponse(
                 url: request.url!,
                 statusCode: 200,
@@ -57,9 +57,9 @@ struct ReaderAPITests {
                     "nextCursor": "next-cursor-token",
                 ]
             )
+        }) { client in
+            try await client.listDocuments(filter: .active, cursor: nil, limit: 30)
         }
-
-        let page = try await client.listDocuments(filter: .active, cursor: nil, limit: 30)
 
         #expect(page.documents.count == 1)
         #expect(page.documents.first?.id == "doc-1")
@@ -69,7 +69,7 @@ struct ReaderAPITests {
 
     @Test
     func commentsDecodesFlatCommentArrayFromEnvelope() async throws {
-        let client = makeStubbedClient { request in
+        let comments = try await withStubbedClient(handler: { request in
             jsonResponse(
                 url: request.url!,
                 statusCode: 200,
@@ -86,9 +86,9 @@ struct ReaderAPITests {
                     ]
                 ]
             )
+        }) { client in
+            try await client.comments(documentID: "doc-1", includeArchived: true)
         }
-
-        let comments = try await client.comments(documentID: "doc-1", includeArchived: true)
 
         #expect(comments.count == 1)
         #expect(comments.first?.id == "comment-1")
@@ -100,16 +100,16 @@ struct ReaderAPITests {
     @Test
     func archiveDocumentIsAnIdempotentPostWithNoBody() async throws {
         let recorder = RequestRecorder()
-        let client = makeStubbedClient { request in
+        let document = try await withStubbedClient(handler: { request in
             recorder.record(request)
             return jsonResponse(
                 url: request.url!,
                 statusCode: 200,
                 object: documentJSONObject(archivedAt: sampleCreatedAtMillis)
             )
+        }) { client in
+            try await client.archiveDocument(id: "doc-1")
         }
-
-        let document = try await client.archiveDocument(id: "doc-1")
 
         #expect(recorder.request?.httpMethod == "POST")
         #expect(recorder.request?.url?.path == "/api/reader/documents/doc-1/archive")
