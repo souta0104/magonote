@@ -1,6 +1,6 @@
 CREATE TABLE reader_documents (
   id                  TEXT PRIMARY KEY,   -- crypto.randomUUID()、サーバー生成
-  text                TEXT NOT NULL,
+  "text"              TEXT NOT NULL,      -- sqlite3def v3.11.13 の型キーワードとの列名衝突回避のため quote 必須
   source_app_name     TEXT NOT NULL,      -- Capture 時の最前面アプリ (Source)
   source_machine_name TEXT NOT NULL,      -- hostname (Source)
   captured_at         INTEGER NOT NULL,   -- unix ms、クライアント時刻
@@ -20,5 +20,5 @@ CREATE TABLE reader_comments (
   created_at   INTEGER NOT NULL,
   archived_at  INTEGER
 );
-CREATE INDEX idx_reader_comments_by_document
-  ON reader_comments (document_id, created_at ASC);
+CREATE INDEX idx_reader_comments_active_by_document
+  ON reader_comments (document_id, created_at ASC) WHERE archived_at IS NULL;

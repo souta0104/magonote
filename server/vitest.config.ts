@@ -1,9 +1,10 @@
-import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers';
+import { readFileSync } from 'node:fs';
+import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig(async () => {
-  const migrationsPath = new URL('./migrations', import.meta.url).pathname;
-  const migrations = await readD1Migrations(migrationsPath);
+export default defineConfig(() => {
+  const schemaPath = new URL('./schema.sql', import.meta.url);
+  const schemaSql = readFileSync(schemaPath, 'utf-8');
 
   return {
     plugins: [
@@ -12,8 +13,8 @@ export default defineConfig(async () => {
         miniflare: {
           bindings: {
             ALLOWED_UID: 'test-uid',
-            // Test-only binding: migrations are applied per test file in test/setup.ts.
-            TEST_MIGRATIONS: migrations,
+            // Test-only binding: schema is applied per test file in test/setup.ts.
+            TEST_SCHEMA_SQL: schemaSql,
           },
         },
       }),

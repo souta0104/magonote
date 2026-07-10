@@ -8,8 +8,9 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "types": "wrangler types",
-    "migrate:local": "wrangler d1 migrations apply magonote --local",
-    "migrate:remote": "wrangler d1 migrations apply magonote --remote"
+    "db:apply:local": "bash scripts/db-apply.sh --local",
+    "db:diff:remote": "bash scripts/db-apply.sh --remote --dry-run",
+    "db:apply:remote": "bash scripts/db-apply.sh --remote"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.8.0",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@types/node": "^26.1.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "wrangler": "^4.110.0"
