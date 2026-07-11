@@ -17,11 +17,11 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
 
 - 命名: 総称 magonote / アプリ名 Magonote (mac, ios) / 今回のツールは Reader。
   ツール追加に備えて API ルート・D1 テーブル・アプリ内フォルダはツール名で名前空間を切る
-- 選択テキスト取得: ショートカット検知 → CGEvent で Cmd+C 発行 → クリップボード読み取り → 復元
+- 選択テキスト取得: 最前面アプリの Accessibility 要素から focused element と selected text を取得
 - コメントのアンカー: 引用テキスト方式 (選択文字列をコメントに quote として保存。オフセット保存やハイライトはしない)
 - プロジェクト管理: XcodeGen (xcodeproj は git-ignore)
 - Firebase プロジェクトは新規作成、Cloudflare はアカウントあり・wrangler 未ログイン
-- bundle id: com.souta0104.magonote.ios / com.souta0104.magonote.mac
+- bundle id: app.soprog.magonote.ios / app.soprog.magonote.macos
 
 ## 技術方針
 
@@ -118,7 +118,7 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
         │   ├── Session/           # SessionStore (Firebase/GoogleSignIn)
         │   ├── SettingsView.swift # アカウント / 権限 / サーバー URL / ツールごとの設定セクション
         │   ├── Magonote.entitlements
-        │   └── Tools/Reader/      # CaptureController (hotkey → pasteboard → POST)
+        │   └── Tools/Reader/      # CaptureController (hotkey → Accessibility → POST)
         └── GoogleService-Info.plist   # git-ignore
 ```
 
@@ -370,17 +370,14 @@ CaptureController.capture() を呼ぶ。
 1. `AXIsProcessTrusted()` を guard。false なら `AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])`
    で OS のプロンプトを出し、failure フィードバック
 2. `SessionStore.isSignedIn` を guard。false なら「サインインが必要」フィードバック
-3. 最前面アプリ名を先に取得 (`NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"`) —
-   Cmd+C 発行後ではフォーカスの根拠が失われるため必ず先
-4. pasteboard を snapshot (changeCount + string item。string のみ復元で許容、コードにコメントで明記)
-5. `CGEventSource(stateID: .combinedSessionState)` で kVK_ANSI_C + `.maskCommand` の
-   keyDown/keyUp を `post(tap: .cghidEventTap)`
-6. `NSPasteboard.general.changeCount` を 50ms 間隔で最大 1 秒ポーリング。
-   変化なし or 空文字列 → snapshot 復元して「テキストが選択されていない」フィードバック (ハングさせない)
-7. テキスト読み取り後、即 snapshot を復元
-8. `NewDocument(text:, sourceAppName:, sourceMachineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName, capturedAt: .now)`
+3. `NSWorkspace.shared.frontmostApplication` から選択元アプリと process identifier を取得
+4. `AXUIElementCreateApplication(processIdentifier)` で選択元アプリの Accessibility 要素を作成
+5. `kAXFocusedUIElementAttribute` から選択元アプリ内の focused element を取得
+6. focused element の `kAXSelectedTextAttribute` から選択中の文字列を取得。
+   属性取得失敗 or 空文字列 → 「テキストが選択されていない」フィードバック
+7. `NewDocument(text:, sourceAppName:, sourceMachineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName, capturedAt: .now)`
    を `client.createDocument()` で POST
-9. フィードバック (成功/失敗の全パスで必ず 1 回):
+8. フィードバック (成功/失敗の全パスで必ず 1 回):
    - 成功: 通知「Xcode から 1,234 文字をキャプチャ」+ アイコン success
    - 失敗: 通知にエラー内容 (未選択 / 未サインイン / 権限なし / 通信失敗) + アイコン failure
    - 通知は UserNotifications (初回キャプチャ時に requestAuthorization)。許可されなくても
@@ -391,8 +388,8 @@ CaptureController.capture() を呼ぶ。
 
 ### 権限・配布まわり
 
-- entitlements: App Sandbox なし (必須 — sandbox 下では他アプリへの CGEvent 送出不可)。
-  keychain-access-groups (`$(AppIdentifierPrefix)com.souta0104.magonote.mac`) を追加
+- entitlements: App Sandbox なし (必須 — 他アプリの Accessibility 要素を参照するため)。
+  keychain-access-groups (`$(AppIdentifierPrefix)app.soprog.magonote.shared`) を追加
   (FirebaseAuth の macOS keychain エラー対策)
 - Info.plist: `LSUIElement: true` (Dock 非表示) + Google ログインの URL scheme のみ。
   権限文字列は不要 (Accessibility は System Settings で付与、usage description キーは存在しない)
@@ -451,10 +448,10 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
 
 - 共通: SWIFT_VERSION 6.0、CODE_SIGN_STYLE Automatic (personal team)。
   プロジェクト名・ターゲット名はどちらも Magonote (ディレクトリが分かれているので衝突しない)
-- iOS (bundle: com.souta0104.magonote.ios): packages = firebase-ios-sdk (from 12.0.0),
+- iOS (bundle: app.soprog.magonote.ios): packages = firebase-ios-sdk (from 12.0.0),
   GoogleSignIn-iOS (from 8.0.0), swift-markdown-ui (from 2.4.0), MagonoteKit (path)。
   Info: CFBundleURLTypes に REVERSED_CLIENT_ID の URL scheme、UILaunchScreen: {}
-- macOS (bundle: com.souta0104.magonote.mac): 上記 + KeyboardShortcuts (from 2.0.0)、MarkdownUI なし。
+- macOS (bundle: app.soprog.magonote.macos): 上記 + KeyboardShortcuts (from 2.0.0)、MarkdownUI なし。
   Info: LSUIElement true + URL scheme。entitlements: keychain-access-groups のみ (sandbox キーなし)
 - GoogleService-Info.plist は sources に resources phase で参照 (未配置ならビルドが明確に失敗する)
 - REVERSED_CLIENT_ID は project.yml にベタ書きで許容 (OAuth client 識別子は配布アプリの
@@ -466,7 +463,7 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
   本設計をコミット。検証: ダミーの plist / xcodeproj を置いて git status に出ないこと
 - DEV-3 外部セットアップ (手動、README に記載):
   Firebase プロジェクト作成 → Google provider 有効化 → アプリ 2 つ登録
-  (com.souta0104.magonote.ios / com.souta0104.magonote.mac) → plist 2 つダウンロード配置。
+  (app.soprog.magonote.ios / app.soprog.magonote.macos) → plist 2 つダウンロード配置。
   Cloudflare: wrangler login → d1 create magonote → kv namespace create FIREBASE_CERT_CACHE →
   id を wrangler.jsonc に記入 → ALLOWED_UID は仮値で secret put (DEV-6 で実 UID に更新) + .dev.vars
 - DEV-4 Backend: schema.sql → db.ts → tools/reader/ → auth.ts → app.ts/index.ts → tests。
@@ -474,7 +471,7 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
   wrangler deploy して prod /api/health curl。実 token での検証は DEV-6 の初 POST で行う
 - DEV-5 MagonoteKit: models → client → URLProtocol tests。検証: swift test
 - DEV-6 macOS アプリ: (1) XcodeGen skeleton + MenuBarExtra 起動 →
-  (2) hotkey + capture をコンソール出力で検証 (pasteboard 復元も確認) →
+  (2) hotkey と menu bar の両方から選択元アプリの文字列を取得できることを検証 →
   (3) Google sign-in、コンソールの UID を wrangler secret put ALLOWED_UID →
   (4) wrangler dev への POST を d1 execute --local の select で確認 → (5) prod へ向けて通知確認
 - DEV-7 iOS アプリ: (1) skeleton + login → (2) 一覧 + pagination (DEV-6 の実データで) →
@@ -485,10 +482,11 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
 
 ## リスク・注意点
 
-1. App Sandbox OFF は必須 (CGEvent 送出のため)。App Store 配布は不可の設計 — 個人利用なので許容
+1. App Sandbox OFF は必須 (他アプリに対する Accessibility API の利用が App Sandbox の制限対象のため)。
+   App Store 配布は不可の設計 — 個人利用なので許容
 2. Accessibility の信頼はバイナリ署名単位。personal team の安定した証明書で署名し、
    テストは一貫した場所 (Xcode 実行 or /Applications) から行う
-3. Cmd+C レース: changeCount ポーリングで対応。未選択時のタイムアウト → 明示フィードバック
+3. アプリや UI 要素が `kAXSelectedTextAttribute` を提供しない場合は取得不可 → 明示フィードバック
 4. FirebaseAuth macOS の keychain エラー → keychain-access-groups entitlement で対策
 5. MarkdownUI のダークモード → カスタム Theme 必須
 6. iOS 18 TextSelection が不安定なら UITextView representable に差し替え (plan B)
