@@ -113,8 +113,9 @@ final class DocumentListStore {
       return
     }
 
-    let removed = items.remove(at: index)
-    let operationFilter = filter
+    items.remove(at: index)
+    listRequestID = nil
+    isLoading = false
     pendingDocumentIDs.insert(id)
     error = nil
 
@@ -124,13 +125,12 @@ final class DocumentListStore {
       } else {
         _ = try await client.unarchiveDocument(id: id)
       }
-      items.removeAll { $0.id == id }
+      pendingDocumentIDs.remove(id)
+      await refresh()
     } catch {
-      if filter == operationFilter, !items.contains(where: { $0.id == id }) {
-        items.insert(removed, at: min(index, items.count))
-      }
+      pendingDocumentIDs.remove(id)
+      await refresh()
       self.error = normalizedAPIError(error)
     }
-    pendingDocumentIDs.remove(id)
   }
 }

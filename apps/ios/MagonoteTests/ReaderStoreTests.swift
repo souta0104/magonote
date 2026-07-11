@@ -39,7 +39,10 @@ final class ReaderStoreTests: XCTestCase {
 
   func testArchiveRollsBackOptimisticRemovalWhenRequestFails() async {
     let client = FakeReaderAPIClient()
-    client.pages = [DocumentPage(documents: [summary(id: "1")], nextCursor: nil)]
+    client.pages = [
+      DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
+      DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
+    ]
     client.archiveError = APIError.server(status: 500, message: "failed")
     let store = DocumentListStore(client: client)
 
@@ -97,6 +100,7 @@ final class ReaderStoreTests: XCTestCase {
     client.pages = [
       DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
       DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
+      DocumentPage(documents: [], nextCursor: nil),
     ]
     client.detail = document(id: "1")
     client.suspendArchiveDocument = true
@@ -111,6 +115,56 @@ final class ReaderStoreTests: XCTestCase {
     client.resumeArchiveDocument(with: document(id: "1"))
     await archiveRequest.value
     XCTAssertTrue(store.items.isEmpty)
+  }
+
+  func testLoadMoreStartedBeforeArchiveCannotRestoreDocument() async {
+    let client = FakeReaderAPIClient()
+    client.pages = [
+      DocumentPage(documents: [summary(id: "1")], nextCursor: "next"),
+    ]
+    client.detail = document(id: "1")
+    let store = DocumentListStore(client: client)
+    await store.refresh()
+
+    client.suspendListRequests = true
+    let loadMoreRequest = Task { await store.loadMore() }
+    await waitUntil { client.listContinuations.count == 1 }
+    let archiveRequest = Task { await store.archive(id: "1") }
+    await waitUntil { client.listContinuations.count == 2 }
+
+    client.resumeListRequest(
+      at: 0,
+      with: DocumentPage(documents: [summary(id: "1")], nextCursor: nil)
+    )
+    await loadMoreRequest.value
+    client.resumeListRequest(at: 1, with: DocumentPage(documents: [], nextCursor: nil))
+    await archiveRequest.value
+
+    XCTAssertTrue(store.items.isEmpty)
+  }
+
+  func testArchiveRefreshesDestinationFilterAfterRequestCompletes() async {
+    let client = FakeReaderAPIClient()
+    client.pages = [
+      DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
+      DocumentPage(documents: [], nextCursor: nil),
+      DocumentPage(documents: [summary(id: "1", archived: true)], nextCursor: nil),
+    ]
+    client.detail = document(id: "1")
+    client.suspendArchiveDocument = true
+    let store = DocumentListStore(client: client)
+    await store.refresh()
+
+    let archiveRequest = Task { await store.archive(id: "1") }
+    await waitUntil { client.archiveDocumentContinuation != nil }
+    await store.setFilter(.archived)
+    XCTAssertTrue(store.items.isEmpty)
+
+    client.resumeArchiveDocument(with: document(id: "1"))
+    await archiveRequest.value
+
+    XCTAssertEqual(store.filter, .archived)
+    XCTAssertEqual(store.items.map(\.id), ["1"])
   }
 
   func testOldCommentsResponseDoesNotReplaceLatestArchivedState() async {
