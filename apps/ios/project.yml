@@ -1,0 +1,71 @@
+name: Magonote
+
+options:
+  bundleIdPrefix: com.souta0104
+  deploymentTarget:
+    iOS: "18.0"
+
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    from: 12.0.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS.git
+    from: 8.0.0
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui.git
+    from: 2.4.0
+  MagonoteKit:
+    path: ../../packages/MagonoteKit
+
+targets:
+  Magonote:
+    type: application
+    platform: iOS
+    sources:
+      - path: Magonote
+      - path: GoogleService-Info.plist
+        buildPhase: resources
+    dependencies:
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseCore
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: MarkdownUI
+        product: MarkdownUI
+      - package: MagonoteKit
+        product: MagonoteKit
+    settings:
+      base:
+        SWIFT_VERSION: 6.0
+        PRODUCT_BUNDLE_IDENTIFIER: com.souta0104.magonote.ios
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: Magonote/Info.plist
+      properties:
+        CFBundleDisplayName: Magonote
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        MagonoteServerBaseURL: https://magonote-api.knock-02b.workers.dev
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              # 実値は iOS 用 GoogleService-Info.plist の REVERSED_CLIENT_ID に置き換える。
+              - com.googleusercontent.apps.539490518229-build-placeholder
+
+  MagonoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: MagonoteTests
+    dependencies:
+      - target: Magonote
+    settings:
+      base:
+        SWIFT_VERSION: 6.0
+        GENERATE_INFOPLIST_FILE: YES
