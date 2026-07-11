@@ -1,7 +1,7 @@
 name: Magonote
 
 options:
-  bundleIdPrefix: com.souta0104
+  bundleIdPrefix: app.soprog
   deploymentTarget:
     macOS: "14.0"
 
@@ -40,7 +40,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: 6.0
-        PRODUCT_BUNDLE_IDENTIFIER: com.souta0104.magonote.mac
+        PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.macos
         CODE_SIGN_STYLE: Automatic
         ENABLE_APP_SANDBOX: NO
     info:
@@ -55,9 +55,12 @@ targets:
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLSchemes:
-              - com.googleusercontent.apps.539490518229-8joqu37j3ud31nln542apodvciedb08b
+              - com.googleusercontent.apps.539490518229-1dg1mpfivce9vqqkt4389qu80kd24kf4
     entitlements:
       path: Magonote/Magonote.entitlements
+      properties:
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)app.soprog.magonote.shared
 
   MagonoteTests:
     type: bundle.unit-test
