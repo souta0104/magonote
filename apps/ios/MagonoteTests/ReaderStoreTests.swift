@@ -197,12 +197,41 @@ final class ReaderStoreTests: XCTestCase {
 
     let archiveRequest = Task { await store.archiveComment(id: "2") }
     await waitUntil { client.archiveCommentContinuation != nil }
-    client.commentItems = [comment(id: "1")]
+    client.commentItems = [comment(id: "1"), comment(id: "2", archived: true)]
     await store.reloadComments()
-    client.resumeArchiveComment(with: comment(id: "2"))
+    client.resumeArchiveComment(with: comment(id: "2", archived: true))
     await archiveRequest.value
 
     XCTAssertEqual(store.comments.map(\.id), ["1", "2"])
+  }
+
+  func testArchiveCommentReloadsCurrentFilterAfterToggle() async {
+    let client = FakeReaderAPIClient()
+    client.commentItems = [comment(id: "1")]
+    client.suspendArchiveComment = true
+    let store = DocumentDetailStore(documentID: "1", client: client)
+    await store.reloadComments()
+
+    let archiveRequest = Task { await store.archiveComment(id: "1") }
+    await waitUntil { client.archiveCommentContinuation != nil }
+
+    store.showArchivedComments = true
+    client.suspendCommentRequests = true
+    let staleReload = Task { await store.reloadComments() }
+    await waitUntil { client.commentContinuations.count == 1 }
+    client.resumeCommentRequest(at: 0, with: [comment(id: "1")])
+    await staleReload.value
+
+    client.resumeArchiveComment(with: comment(id: "1", archived: true))
+    await waitUntil { client.commentContinuations.count == 2 }
+    client.resumeCommentRequest(
+      at: 1,
+      with: [comment(id: "1", archived: true)]
+    )
+    await archiveRequest.value
+
+    XCTAssertTrue(store.showArchivedComments)
+    XCTAssertNotNil(store.comments.first?.archivedAt)
   }
 
   private func waitUntil(
@@ -237,14 +266,14 @@ final class ReaderStoreTests: XCTestCase {
     )
   }
 
-  private func comment(id: String) -> Comment {
+  private func comment(id: String, archived: Bool = false) -> Comment {
     Comment(
       id: id,
       documentId: "1",
       body: "body",
       quote: nil,
       createdAt: .init(timeIntervalSince1970: 1_000),
-      archivedAt: nil
+      archivedAt: archived ? .init(timeIntervalSince1970: 2_000) : nil
     )
   }
 }

@@ -110,34 +110,23 @@ final class DocumentDetailStore {
       return
     }
 
-    let original = comments[index]
-    let operationArchivedState = showArchivedComments
-    if !operationArchivedState {
+    if !showArchivedComments {
       comments.remove(at: index)
     }
 
     do {
-      let updated: Comment
       if archive {
-        updated = try await client.archiveComment(id: id)
+        _ = try await client.archiveComment(id: id)
       } else {
-        updated = try await client.unarchiveComment(id: id)
+        _ = try await client.unarchiveComment(id: id)
       }
-
-      if showArchivedComments == operationArchivedState {
-        if let currentIndex = comments.firstIndex(where: { $0.id == id }) {
-          comments[currentIndex] = updated
-        } else if showArchivedComments {
-          comments.append(updated)
-        }
-      }
+      commentsRequestID = nil
+      await reloadComments()
     } catch {
-      if showArchivedComments == operationArchivedState,
-         !comments.contains(where: { $0.id == id })
-      {
-        comments.insert(original, at: min(index, comments.count))
-      }
-      self.error = normalizedAPIError(error)
+      let operationError = normalizedAPIError(error)
+      commentsRequestID = nil
+      await reloadComments()
+      self.error = operationError
     }
   }
 }
