@@ -115,11 +115,13 @@ final class DocumentDetailStore {
     }
 
     do {
+      let updated: Comment
       if archive {
-        _ = try await client.archiveComment(id: id)
+        updated = try await client.archiveComment(id: id)
       } else {
-        _ = try await client.unarchiveComment(id: id)
+        updated = try await client.unarchiveComment(id: id)
       }
+      applyCommentUpdate(updated)
       commentsRequestID = nil
       await reloadComments()
     } catch {
@@ -127,6 +129,19 @@ final class DocumentDetailStore {
       commentsRequestID = nil
       await reloadComments()
       self.error = operationError
+    }
+  }
+
+  private func applyCommentUpdate(_ updated: Comment) {
+    let shouldDisplay = showArchivedComments || updated.archivedAt == nil
+    if let currentIndex = comments.firstIndex(where: { $0.id == updated.id }) {
+      if shouldDisplay {
+        comments[currentIndex] = updated
+      } else {
+        comments.remove(at: currentIndex)
+      }
+    } else if shouldDisplay {
+      comments.append(updated)
     }
   }
 }

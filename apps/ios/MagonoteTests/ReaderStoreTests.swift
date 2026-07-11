@@ -234,6 +234,24 @@ final class ReaderStoreTests: XCTestCase {
     XCTAssertNotNil(store.comments.first?.archivedAt)
   }
 
+  func testArchiveCommentKeepsMutationResultWhenReloadFails() async {
+    let client = FakeReaderAPIClient()
+    client.commentItems = [comment(id: "1")]
+    client.suspendArchiveComment = true
+    let store = DocumentDetailStore(documentID: "1", client: client)
+    await store.reloadComments()
+
+    let archiveRequest = Task { await store.archiveComment(id: "1") }
+    await waitUntil { client.archiveCommentContinuation != nil }
+    store.showArchivedComments = true
+    client.commentError = APIError.server(status: 500, message: "reload failed")
+    client.resumeArchiveComment(with: comment(id: "1", archived: true))
+    await archiveRequest.value
+
+    XCTAssertEqual(store.comments.map(\.id), ["1"])
+    XCTAssertNotNil(store.comments.first?.archivedAt)
+  }
+
   private func waitUntil(
     _ condition: @escaping @MainActor () -> Bool
   ) async {
@@ -296,6 +314,7 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
   var listRequests: [ListRequest] = []
   var detail: Document?
   var commentItems: [Comment] = []
+  var commentError: (any Error)?
   var createdComment: Comment?
   var archiveError: (any Error)?
   var createCommentRequests: [CreateCommentRequest] = []
@@ -352,6 +371,9 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
   }
 
   func comments(documentID: String, includeArchived: Bool) async throws -> [Comment] {
+    if let commentError {
+      throw commentError
+    }
     if suspendCommentRequests {
       return try await withCheckedThrowingContinuation { continuation in
         commentContinuations.append(continuation)
