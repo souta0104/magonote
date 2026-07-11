@@ -1,6 +1,6 @@
 # magonote / Magonote Reader 設計
 
-進捗・意思決定ログは Linear [DEV-1](https://linear.app/sota-hagiwara/issue/DEV-1/magonote-reader-爆誕) 配下の sub issue で管理する。本ドキュメントは技術設計の正典。
+進捗・意思決定ログは Linear [DEV-1](https://linear.app/soprog/issue/DEV-1/magonote-reader-爆誕) 配下の sub issue で管理する。本ドキュメントは技術設計の正典。
 
 ## Context
 
@@ -21,7 +21,7 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
 - コメントのアンカー: 引用テキスト方式 (選択文字列をコメントに quote として保存。オフセット保存やハイライトはしない)
 - プロジェクト管理: XcodeGen (xcodeproj は git-ignore)
 - Firebase プロジェクトは新規作成、Cloudflare はアカウントあり・wrangler 未ログイン
-- bundle id: com.souta0104.magonote.ios / com.souta0104.magonote.mac
+- Bundle ID: `app.soprog.magonote.ios` / `app.soprog.magonote.macos`
 
 ## 技術方針
 
@@ -392,7 +392,7 @@ CaptureController.capture() を呼ぶ。
 ### 権限・配布まわり
 
 - entitlements: App Sandbox なし (必須 — sandbox 下では他アプリへの CGEvent 送出不可)。
-  keychain-access-groups (`$(AppIdentifierPrefix)com.souta0104.magonote.mac`) を追加
+  keychain-access-groups (`$(AppIdentifierPrefix)app.soprog.magonote.shared`) を追加
   (FirebaseAuth の macOS keychain エラー対策)
 - Info.plist: `LSUIElement: true` (Dock 非表示) + Google ログインの URL scheme のみ。
   権限文字列は不要 (Accessibility は System Settings で付与、usage description キーは存在しない)
@@ -451,10 +451,10 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
 
 - 共通: SWIFT_VERSION 6.0、CODE_SIGN_STYLE Automatic (personal team)。
   プロジェクト名・ターゲット名はどちらも Magonote (ディレクトリが分かれているので衝突しない)
-- iOS (bundle: com.souta0104.magonote.ios): packages = firebase-ios-sdk (from 12.0.0),
+- iOS (bundle: `app.soprog.magonote.ios`): packages = firebase-ios-sdk (from 12.0.0),
   GoogleSignIn-iOS (from 8.0.0), swift-markdown-ui (from 2.4.0), MagonoteKit (path)。
   Info: CFBundleURLTypes に REVERSED_CLIENT_ID の URL scheme、UILaunchScreen: {}
-- macOS (bundle: com.souta0104.magonote.mac): 上記 + KeyboardShortcuts (from 2.0.0)、MarkdownUI なし。
+- macOS (bundle: `app.soprog.magonote.macos`): 上記 + KeyboardShortcuts (from 2.0.0)、MarkdownUI なし。
   Info: LSUIElement true + URL scheme。entitlements: keychain-access-groups のみ (sandbox キーなし)
 - GoogleService-Info.plist は sources に resources phase で参照 (未配置ならビルドが明確に失敗する)
 - REVERSED_CLIENT_ID は project.yml にベタ書きで許容 (OAuth client 識別子は配布アプリの
@@ -466,7 +466,7 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
   本設計をコミット。検証: ダミーの plist / xcodeproj を置いて git status に出ないこと
 - DEV-3 外部セットアップ (手動、README に記載):
   Firebase プロジェクト作成 → Google provider 有効化 → アプリ 2 つ登録
-  (com.souta0104.magonote.ios / com.souta0104.magonote.mac) → plist 2 つダウンロード配置。
+  (`app.soprog.magonote.ios` / `app.soprog.magonote.macos`) → plist 2 つダウンロード配置。
   Cloudflare: wrangler login → d1 create magonote → kv namespace create FIREBASE_CERT_CACHE →
   id を wrangler.jsonc に記入 → ALLOWED_UID は仮値で secret put (DEV-6 で実 UID に更新) + .dev.vars
 - DEV-4 Backend: schema.sql → db.ts → tools/reader/ → auth.ts → app.ts/index.ts → tests。

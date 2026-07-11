@@ -7,7 +7,13 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 サーバーに保存し、iPhone の見やすいビューワーで読む。
 
 設計の詳細は [`docs/superpowers/specs/2026-07-10-magonote-reader-design.md`](docs/superpowers/specs/2026-07-10-magonote-reader-design.md) を参照。
-進捗・意思決定ログは Linear [DEV-1](https://linear.app/sota-hagiwara/issue/DEV-1/magonote-reader-爆誕) 配下で管理している。
+進捗・意思決定ログは Linear [DEV-1](https://linear.app/soprog/issue/DEV-1/magonote-reader-爆誕) 配下で管理している。
+
+## アプリ識別子
+
+- Firebase project: `magonote-souta0104`
+- iOS Bundle ID: `app.soprog.magonote.ios`
+- macOS Bundle ID: `app.soprog.magonote.macos`
 
 ## リポジトリ構成
 

@@ -1,7 +1,7 @@
 name: Magonote
 
 options:
-  bundleIdPrefix: com.souta0104
+  bundleIdPrefix: app.soprog
   deploymentTarget:
     iOS: "18.0"
 
@@ -40,7 +40,7 @@ targets:
     settings:
       base:
         SWIFT_VERSION: 6.0
-        PRODUCT_BUNDLE_IDENTIFIER: com.souta0104.magonote.ios
+        PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.ios
         CODE_SIGN_STYLE: Automatic
     info:
       path: Magonote/Info.plist
@@ -55,7 +55,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLSchemes:
-              - com.googleusercontent.apps.539490518229-b2g8qvkfbqi33o092a3n1dtfp5dk197f
+              - com.googleusercontent.apps.539490518229-k9a466jo9ofkljfb2j4rmdd3v2clfi0h
 
   MagonoteTests:
     type: bundle.unit-test
