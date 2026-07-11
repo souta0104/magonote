@@ -79,8 +79,12 @@ final class CaptureController {
             throw CaptureError.notSignedIn
         }
 
-        let sourceAppName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
-        let text = try selectedTextFromFocusedElement()
+        guard let sourceApplication = NSWorkspace.shared.frontmostApplication else {
+            throw CaptureError.nothingSelected
+        }
+
+        let sourceAppName = sourceApplication.localizedName ?? "Unknown"
+        let text = try selectedTextFromFocusedElement(in: sourceApplication)
 
         let newDocument = NewDocument(
             text: text,
@@ -97,11 +101,15 @@ final class CaptureController {
         )
     }
 
-    private func selectedTextFromFocusedElement() throws -> String {
-        let systemWideElement = AXUIElementCreateSystemWide()
+    private func selectedTextFromFocusedElement(
+        in application: NSRunningApplication
+    ) throws -> String {
+        let applicationElement = AXUIElementCreateApplication(
+            application.processIdentifier
+        )
         var focusedElementValue: CFTypeRef?
         let focusedElementResult = AXUIElementCopyAttributeValue(
-            systemWideElement,
+            applicationElement,
             kAXFocusedUIElementAttribute as CFString,
             &focusedElementValue
         )
@@ -114,7 +122,7 @@ final class CaptureController {
             throw CaptureError.nothingSelected
         }
 
-        let focusedElement = unsafeBitCast(
+        let focusedElement = unsafeDowncast(
             focusedElementValue,
             to: AXUIElement.self
         )
