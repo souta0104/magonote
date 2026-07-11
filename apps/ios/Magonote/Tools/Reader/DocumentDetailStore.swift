@@ -1,3 +1,4 @@
+import Foundation
 import MagonoteKit
 import Observation
 
@@ -6,6 +7,7 @@ import Observation
 final class DocumentDetailStore {
   private let client: any ReaderAPIClient
   private let documentID: String
+  private var commentsRequestID: UUID?
 
   private(set) var document: Document?
   private(set) var comments: [Comment] = []
@@ -28,27 +30,38 @@ final class DocumentDetailStore {
     defer { isLoading = false }
 
     do {
-      async let document = client.document(id: documentID)
-      async let comments = client.comments(
-        documentID: documentID,
-        includeArchived: showArchivedComments
-      )
-      self.document = try await document
-      self.comments = try await comments
+      document = try await client.document(id: documentID)
+      await reloadComments()
     } catch {
       self.error = normalizedAPIError(error)
     }
   }
 
   func reloadComments() async {
+    let requestID = UUID()
+    let requestedArchivedState = showArchivedComments
+    commentsRequestID = requestID
     error = nil
+    defer {
+      if commentsRequestID == requestID {
+        commentsRequestID = nil
+      }
+    }
     do {
-      comments = try await client.comments(
+      let loadedComments = try await client.comments(
         documentID: documentID,
-        includeArchived: showArchivedComments
+        includeArchived: requestedArchivedState
       )
+      guard commentsRequestID == requestID,
+            showArchivedComments == requestedArchivedState
+      else {
+        return
+      }
+      comments = loadedComments
     } catch {
-      self.error = normalizedAPIError(error)
+      if commentsRequestID == requestID {
+        self.error = normalizedAPIError(error)
+      }
     }
   }
 
@@ -75,7 +88,8 @@ final class DocumentDetailStore {
         body: body,
         quote: quote
       )
-      comments.insert(comment, at: 0)
+      commentsRequestID = nil
+      comments.append(comment)
       return true
     } catch {
       self.error = normalizedAPIError(error)
@@ -97,7 +111,8 @@ final class DocumentDetailStore {
     }
 
     let original = comments[index]
-    if !showArchivedComments {
+    let operationArchivedState = showArchivedComments
+    if !operationArchivedState {
       comments.remove(at: index)
     }
 
@@ -109,13 +124,17 @@ final class DocumentDetailStore {
         updated = try await client.unarchiveComment(id: id)
       }
 
-      if showArchivedComments {
-        comments[index] = updated
+      if showArchivedComments == operationArchivedState {
+        if let currentIndex = comments.firstIndex(where: { $0.id == id }) {
+          comments[currentIndex] = updated
+        } else if showArchivedComments {
+          comments.append(updated)
+        }
       }
     } catch {
-      if showArchivedComments {
-        comments[index] = original
-      } else {
+      if showArchivedComments == operationArchivedState,
+         !comments.contains(where: { $0.id == id })
+      {
         comments.insert(original, at: min(index, comments.count))
       }
       self.error = normalizedAPIError(error)

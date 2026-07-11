@@ -61,10 +61,102 @@ final class ReaderStoreTests: XCTestCase {
     let didAdd = await store.addComment(body: "new", quote: "quote")
 
     XCTAssertEqual(store.document?.id, "1")
-    XCTAssertEqual(store.comments.map(\.id), ["comment-2", "comment-1"])
+    XCTAssertEqual(store.comments.map(\.id), ["comment-1", "comment-2"])
     XCTAssertTrue(didAdd)
     XCTAssertEqual(client.createCommentRequests.first?.body, "new")
     XCTAssertEqual(client.createCommentRequests.first?.quote, "quote")
+  }
+
+  func testOldFilterResponseDoesNotReplaceLatestFilter() async {
+    let client = FakeReaderAPIClient()
+    client.suspendListRequests = true
+    let store = DocumentListStore(client: client)
+
+    let activeRequest = Task { await store.refresh() }
+    await waitUntil { client.listContinuations.count == 1 }
+    let archivedRequest = Task { await store.setFilter(.archived) }
+    await waitUntil { client.listContinuations.count == 2 }
+
+    client.resumeListRequest(
+      at: 1,
+      with: DocumentPage(documents: [summary(id: "archived", archived: true)], nextCursor: nil)
+    )
+    await archivedRequest.value
+    client.resumeListRequest(
+      at: 0,
+      with: DocumentPage(documents: [summary(id: "active")], nextCursor: nil)
+    )
+    await activeRequest.value
+
+    XCTAssertEqual(store.filter, .archived)
+    XCTAssertEqual(store.items.map(\.id), ["archived"])
+  }
+
+  func testRefreshDoesNotRestoreDocumentWhileArchiveIsPending() async {
+    let client = FakeReaderAPIClient()
+    client.pages = [
+      DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
+      DocumentPage(documents: [summary(id: "1")], nextCursor: nil),
+    ]
+    client.detail = document(id: "1")
+    client.suspendArchiveDocument = true
+    let store = DocumentListStore(client: client)
+    await store.refresh()
+
+    let archiveRequest = Task { await store.archive(id: "1") }
+    await waitUntil { client.archiveDocumentContinuation != nil }
+    await store.refresh()
+
+    XCTAssertTrue(store.items.isEmpty)
+    client.resumeArchiveDocument(with: document(id: "1"))
+    await archiveRequest.value
+    XCTAssertTrue(store.items.isEmpty)
+  }
+
+  func testOldCommentsResponseDoesNotReplaceLatestArchivedState() async {
+    let client = FakeReaderAPIClient()
+    client.suspendCommentRequests = true
+    let store = DocumentDetailStore(documentID: "1", client: client)
+
+    let activeRequest = Task { await store.reloadComments() }
+    await waitUntil { client.commentContinuations.count == 1 }
+    store.showArchivedComments = true
+    let archivedRequest = Task { await store.reloadComments() }
+    await waitUntil { client.commentContinuations.count == 2 }
+
+    client.resumeCommentRequest(at: 1, with: [comment(id: "archived")])
+    await archivedRequest.value
+    client.resumeCommentRequest(at: 0, with: [comment(id: "active")])
+    await activeRequest.value
+
+    XCTAssertTrue(store.showArchivedComments)
+    XCTAssertEqual(store.comments.map(\.id), ["archived"])
+  }
+
+  func testArchiveCommentFindsCurrentIndexAfterReload() async {
+    let client = FakeReaderAPIClient()
+    client.commentItems = [comment(id: "1"), comment(id: "2")]
+    client.suspendArchiveComment = true
+    let store = DocumentDetailStore(documentID: "1", client: client)
+    store.showArchivedComments = true
+    await store.reloadComments()
+
+    let archiveRequest = Task { await store.archiveComment(id: "2") }
+    await waitUntil { client.archiveCommentContinuation != nil }
+    client.commentItems = [comment(id: "1")]
+    await store.reloadComments()
+    client.resumeArchiveComment(with: comment(id: "2"))
+    await archiveRequest.value
+
+    XCTAssertEqual(store.comments.map(\.id), ["1", "2"])
+  }
+
+  private func waitUntil(
+    _ condition: @escaping @MainActor () -> Bool
+  ) async {
+    while !condition() {
+      await Task.yield()
+    }
   }
 
   private func summary(id: String, archived: Bool = false) -> DocumentSummary {
@@ -124,6 +216,14 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
   var createdComment: Comment?
   var archiveError: (any Error)?
   var createCommentRequests: [CreateCommentRequest] = []
+  var suspendListRequests = false
+  var listContinuations: [CheckedContinuation<DocumentPage, any Error>?] = []
+  var suspendCommentRequests = false
+  var commentContinuations: [CheckedContinuation<[Comment], any Error>?] = []
+  var suspendArchiveDocument = false
+  var archiveDocumentContinuation: CheckedContinuation<Document, any Error>?
+  var suspendArchiveComment = false
+  var archiveCommentContinuation: CheckedContinuation<Comment, any Error>?
 
   func listDocuments(
     filter: DocumentFilter,
@@ -131,6 +231,11 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
     limit: Int
   ) async throws -> DocumentPage {
     listRequests.append(.init(filter: filter, cursor: cursor, limit: limit))
+    if suspendListRequests {
+      return try await withCheckedThrowingContinuation { continuation in
+        listContinuations.append(continuation)
+      }
+    }
     return pages.removeFirst()
   }
 
@@ -148,6 +253,11 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
     guard let detail else {
       throw APIError.notFound
     }
+    if suspendArchiveDocument {
+      return try await withCheckedThrowingContinuation { continuation in
+        archiveDocumentContinuation = continuation
+      }
+    }
     return detail
   }
 
@@ -159,7 +269,12 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
   }
 
   func comments(documentID: String, includeArchived: Bool) async throws -> [Comment] {
-    commentItems
+    if suspendCommentRequests {
+      return try await withCheckedThrowingContinuation { continuation in
+        commentContinuations.append(continuation)
+      }
+    }
+    return commentItems
   }
 
   func createComment(documentID: String, body: String, quote: String?) async throws -> Comment {
@@ -174,6 +289,11 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
     guard let comment = commentItems.first(where: { $0.id == id }) else {
       throw APIError.notFound
     }
+    if suspendArchiveComment {
+      return try await withCheckedThrowingContinuation { continuation in
+        archiveCommentContinuation = continuation
+      }
+    }
     return comment
   }
 
@@ -182,5 +302,29 @@ private final class FakeReaderAPIClient: ReaderAPIClient, @unchecked Sendable {
       throw APIError.notFound
     }
     return comment
+  }
+
+  func resumeListRequest(at index: Int, with page: DocumentPage) {
+    let continuation = listContinuations[index]
+    listContinuations[index] = nil
+    continuation?.resume(returning: page)
+  }
+
+  func resumeCommentRequest(at index: Int, with comments: [Comment]) {
+    let continuation = commentContinuations[index]
+    commentContinuations[index] = nil
+    continuation?.resume(returning: comments)
+  }
+
+  func resumeArchiveDocument(with document: Document) {
+    let continuation = archiveDocumentContinuation
+    archiveDocumentContinuation = nil
+    continuation?.resume(returning: document)
+  }
+
+  func resumeArchiveComment(with comment: Comment) {
+    let continuation = archiveCommentContinuation
+    archiveCommentContinuation = nil
+    continuation?.resume(returning: comment)
   }
 }

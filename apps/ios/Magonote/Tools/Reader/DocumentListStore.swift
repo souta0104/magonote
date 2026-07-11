@@ -1,3 +1,4 @@
+import Foundation
 import MagonoteKit
 import Observation
 
@@ -5,6 +6,8 @@ import Observation
 @Observable
 final class DocumentListStore {
   private let client: any ReaderAPIClient
+  private var listRequestID: UUID?
+  private var pendingDocumentIDs: Set<String> = []
 
   private(set) var items: [DocumentSummary] = []
   private(set) var nextCursor: String?
@@ -17,20 +20,29 @@ final class DocumentListStore {
   }
 
   func refresh() async {
-    guard !isLoading else {
-      return
-    }
-
+    let requestID = UUID()
+    let requestedFilter = filter
+    listRequestID = requestID
     isLoading = true
     error = nil
-    defer { isLoading = false }
+    defer {
+      if listRequestID == requestID {
+        listRequestID = nil
+        isLoading = false
+      }
+    }
 
     do {
-      let page = try await client.listDocuments(filter: filter, cursor: nil, limit: 30)
-      items = page.documents
+      let page = try await client.listDocuments(filter: requestedFilter, cursor: nil, limit: 30)
+      guard listRequestID == requestID, filter == requestedFilter else {
+        return
+      }
+      items = page.documents.filter { !pendingDocumentIDs.contains($0.id) }
       nextCursor = page.nextCursor
     } catch {
-      self.error = normalizedAPIError(error)
+      if listRequestID == requestID {
+        self.error = normalizedAPIError(error)
+      }
     }
   }
 
@@ -39,21 +51,39 @@ final class DocumentListStore {
       return
     }
 
+    let requestID = UUID()
+    let requestedFilter = filter
+    let requestedCursor = nextCursor
+    listRequestID = requestID
     isLoading = true
     error = nil
-    defer { isLoading = false }
+    defer {
+      if listRequestID == requestID {
+        listRequestID = nil
+        isLoading = false
+      }
+    }
 
     do {
       let page = try await client.listDocuments(
-        filter: filter,
-        cursor: nextCursor,
+        filter: requestedFilter,
+        cursor: requestedCursor,
         limit: 30
       )
+      guard listRequestID == requestID, filter == requestedFilter else {
+        return
+      }
       let existingIDs = Set(items.map(\.id))
-      items.append(contentsOf: page.documents.filter { !existingIDs.contains($0.id) })
+      items.append(
+        contentsOf: page.documents.filter {
+          !existingIDs.contains($0.id) && !pendingDocumentIDs.contains($0.id)
+        }
+      )
       self.nextCursor = page.nextCursor
     } catch {
-      self.error = normalizedAPIError(error)
+      if listRequestID == requestID {
+        self.error = normalizedAPIError(error)
+      }
     }
   }
 
@@ -65,6 +95,8 @@ final class DocumentListStore {
     self.filter = filter
     items = []
     nextCursor = nil
+    listRequestID = nil
+    isLoading = false
     await refresh()
   }
 
@@ -82,6 +114,8 @@ final class DocumentListStore {
     }
 
     let removed = items.remove(at: index)
+    let operationFilter = filter
+    pendingDocumentIDs.insert(id)
     error = nil
 
     do {
@@ -90,9 +124,13 @@ final class DocumentListStore {
       } else {
         _ = try await client.unarchiveDocument(id: id)
       }
+      items.removeAll { $0.id == id }
     } catch {
-      items.insert(removed, at: min(index, items.count))
+      if filter == operationFilter, !items.contains(where: { $0.id == id }) {
+        items.insert(removed, at: min(index, items.count))
+      }
       self.error = normalizedAPIError(error)
     }
+    pendingDocumentIDs.remove(id)
   }
 }
