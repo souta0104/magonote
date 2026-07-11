@@ -1,6 +1,5 @@
 import AppKit
 import ApplicationServices
-import Carbon.HIToolbox
 import KeyboardShortcuts
 import MagonoteKit
 import Observation
@@ -81,87 +80,60 @@ final class CaptureController {
         }
 
         let sourceAppName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"
-        let pasteboard = NSPasteboard.general
-        let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
-        let initialChangeCount = pasteboard.changeCount
+        let text = try selectedTextFromFocusedElement()
 
-        guard postCopyShortcut() else {
-            snapshot.restore(to: pasteboard)
+        let newDocument = NewDocument(
+            text: text,
+            sourceAppName: sourceAppName,
+            sourceMachineName: Host.current().localizedName
+                ?? ProcessInfo.processInfo.hostName,
+            capturedAt: .now
+        )
+        _ = try await APIClientFactory.makeClient().createDocument(newDocument)
+
+        return CaptureResult(
+            sourceAppName: sourceAppName,
+            characterCount: text.count
+        )
+    }
+
+    private func selectedTextFromFocusedElement() throws -> String {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var focusedElementValue: CFTypeRef?
+        let focusedElementResult = AXUIElementCopyAttributeValue(
+            systemWideElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedElementValue
+        )
+
+        guard
+            focusedElementResult == .success,
+            let focusedElementValue,
+            CFGetTypeID(focusedElementValue) == AXUIElementGetTypeID()
+        else {
             throw CaptureError.nothingSelected
         }
 
-        do {
-            let text = try await waitForSelectedText(
-                on: pasteboard,
-                after: initialChangeCount
-            )
-            snapshot.restore(to: pasteboard)
+        let focusedElement = unsafeBitCast(
+            focusedElementValue,
+            to: AXUIElement.self
+        )
+        var selectedTextValue: CFTypeRef?
+        let selectedTextResult = AXUIElementCopyAttributeValue(
+            focusedElement,
+            kAXSelectedTextAttribute as CFString,
+            &selectedTextValue
+        )
 
-            let newDocument = NewDocument(
-                text: text,
-                sourceAppName: sourceAppName,
-                sourceMachineName: Host.current().localizedName
-                    ?? ProcessInfo.processInfo.hostName,
-                capturedAt: .now
-            )
-            _ = try await APIClientFactory.makeClient().createDocument(newDocument)
-
-            return CaptureResult(
-                sourceAppName: sourceAppName,
-                characterCount: text.count
-            )
-        } catch {
-            snapshot.restore(to: pasteboard)
-            throw error
-        }
-    }
-
-    private func postCopyShortcut() -> Bool {
         guard
-            let source = CGEventSource(stateID: .combinedSessionState),
-            let keyDown = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: CGKeyCode(kVK_ANSI_C),
-                keyDown: true
-            ),
-            let keyUp = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: CGKeyCode(kVK_ANSI_C),
-                keyDown: false
-            )
+            selectedTextResult == .success,
+            let text = selectedTextValue as? String,
+            !text.isEmpty
         else {
-            return false
+            throw CaptureError.nothingSelected
         }
 
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
-        return true
-    }
-
-    private func waitForSelectedText(
-        on pasteboard: NSPasteboard,
-        after initialChangeCount: Int
-    ) async throws -> String {
-        for _ in 0 ..< 20 {
-            try await Task.sleep(for: .milliseconds(50))
-
-            guard pasteboard.changeCount != initialChangeCount else {
-                continue
-            }
-
-            guard
-                let text = pasteboard.string(forType: .string),
-                !text.isEmpty
-            else {
-                throw CaptureError.nothingSelected
-            }
-
-            return text
-        }
-
-        throw CaptureError.nothingSelected
+        return text
     }
 
     private func requestNotificationAuthorizationIfNeeded() async {
@@ -255,35 +227,6 @@ enum CaptureError: Error {
 private struct CaptureResult {
     let sourceAppName: String
     let characterCount: Int
-}
-
-private struct PasteboardSnapshot {
-    private let items: [[NSPasteboard.PasteboardType: Data]]
-
-    init(pasteboard: NSPasteboard) {
-        items = (pasteboard.pasteboardItems ?? []).map { item in
-            Dictionary(
-                uniqueKeysWithValues: item.types.compactMap { type in
-                    item.data(forType: type).map { (type, $0) }
-                }
-            )
-        }
-    }
-
-    func restore(to pasteboard: NSPasteboard) {
-        pasteboard.clearContents()
-        let restoredItems = items.map { values in
-            let item = NSPasteboardItem()
-            for (type, data) in values {
-                item.setData(data, forType: type)
-            }
-            return item
-        }
-
-        if !restoredItems.isEmpty {
-            pasteboard.writeObjects(restoredItems)
-        }
-    }
 }
 
 private extension APIError {
