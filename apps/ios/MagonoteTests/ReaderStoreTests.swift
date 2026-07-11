@@ -252,6 +252,23 @@ final class ReaderStoreTests: XCTestCase {
     XCTAssertNotNil(store.comments.first?.archivedAt)
   }
 
+  func testArchiveCommentRestoresOriginalWhenMutationAndReloadFail() async {
+    let client = FakeReaderAPIClient()
+    client.commentItems = [comment(id: "1")]
+    let store = DocumentDetailStore(documentID: "1", client: client)
+    await store.reloadComments()
+
+    client.commentItems = []
+    client.commentError = APIError.server(status: 500, message: "reload failed")
+    await store.archiveComment(id: "1")
+
+    XCTAssertEqual(store.comments.map(\.id), ["1"])
+    XCTAssertNil(store.comments.first?.archivedAt)
+    guard case .notFound = store.error else {
+      return XCTFail("Expected the archive error to be preserved")
+    }
+  }
+
   private func waitUntil(
     _ condition: @escaping @MainActor () -> Bool
   ) async {

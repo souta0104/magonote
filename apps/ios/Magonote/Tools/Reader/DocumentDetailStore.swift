@@ -109,6 +109,7 @@ final class DocumentDetailStore {
     guard let index = comments.firstIndex(where: { $0.id == id }) else {
       return
     }
+    let original = comments[index]
 
     if !showArchivedComments {
       comments.remove(at: index)
@@ -126,6 +127,7 @@ final class DocumentDetailStore {
       await reloadComments()
     } catch {
       let operationError = normalizedAPIError(error)
+      applyCommentUpdate(original)
       commentsRequestID = nil
       await reloadComments()
       self.error = operationError
