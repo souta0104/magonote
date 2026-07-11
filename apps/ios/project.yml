@@ -55,8 +55,7 @@ targets:
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLSchemes:
-              # 実値は iOS 用 GoogleService-Info.plist の REVERSED_CLIENT_ID に置き換える。
-              - com.googleusercontent.apps.539490518229-build-placeholder
+              - com.googleusercontent.apps.539490518229-b2g8qvkfbqi33o092a3n1dtfp5dk197f
 
   MagonoteTests:
     type: bundle.unit-test
