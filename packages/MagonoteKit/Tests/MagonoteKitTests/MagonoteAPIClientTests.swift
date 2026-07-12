@@ -54,6 +54,24 @@ struct MagonoteAPIClientTests {
     }
 
     @Test
+    func datesWithSubmillisecondPrecisionEncodeAsIntegerMilliseconds() throws {
+        let date = Date(timeIntervalSince1970: 1_700_000_000.1239)
+        let newDocument = NewDocument(
+            text: "hello",
+            sourceAppName: "TextEdit",
+            sourceMachineName: "MacBook-Pro",
+            capturedAt: date
+        )
+
+        let encoded = try JSONCoding.apiEncoder.encode(newDocument)
+        let jsonObject = try #require(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+
+        #expect(jsonObject["capturedAt"] as? Int64 == 1_700_000_000_123)
+    }
+
+    @Test
     func notFoundEnvelopeMapsToNotFoundCase() async throws {
         do {
             _ = try await withStubbedClient(handler: { request in
