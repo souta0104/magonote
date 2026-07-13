@@ -17,7 +17,8 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
 
 - 命名: 総称 magonote / アプリ名 Magonote (mac, ios) / 今回のツールは Reader。
   ツール追加に備えて API ルート・D1 テーブル・アプリ内フォルダはツール名で名前空間を切る
-- 選択テキスト取得: 最前面アプリの Accessibility 要素から focused element と selected text を取得
+- 選択テキスト取得: 最前面アプリへ Cmd+C を送信し、general pasteboard に書き込まれた
+  文字列を取得。取得した文字列は pasteboard に残し、開始前の内容へ復元しない
 - コメントのアンカー: 引用テキスト方式 (選択文字列をコメントに quote として保存。オフセット保存やハイライトはしない)
 - プロジェクト管理: XcodeGen (xcodeproj は git-ignore)
 - Firebase プロジェクトは新規作成、Cloudflare はアカウントあり・wrangler 未ログイン
@@ -346,7 +347,10 @@ menu bar 常駐アプリ。Reader のキャプチャ機能を最初のツール�
 - Support/APIClientFactory.swift: UserDefaults の `serverBaseURL` (デフォルトは prod URL) から
   `MagonoteAPIClient` を組み立てる。設定画面の URL 変更が次のリクエストから効く
 - Tools/Reader/CaptureController.swift (@Observable, @MainActor): 下記フローだけを持ち、
-  通信は MagonoteAPIClient に、認証は SessionStore に委譲 (SRP)
+  選択文字列の取得は SelectionTextReading に、通信は MagonoteAPIClient に、認証は
+  SessionStore に委譲 (SRP)
+- Tools/Reader/SelectionTextReader.swift: Cmd+C の送信と general pasteboard の更新待機を担当。
+  pasteboard の snapshot、消去、復元は行わない
 - SettingsView.swift: TabView 構成 —
   - アカウント: ログイン状態 (メールアドレス表示)、サインイン/サインアウトボタン、UID の
     コピーボタン (ALLOWED_UID 設定用)
@@ -370,11 +374,11 @@ CaptureController.capture() を呼ぶ。
 1. `AXIsProcessTrusted()` を guard。false なら `AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])`
    で OS のプロンプトを出し、failure フィードバック
 2. `SessionStore.isSignedIn` を guard。false なら「サインインが必要」フィードバック
-3. `NSWorkspace.shared.frontmostApplication` から選択元アプリと process identifier を取得
-4. `AXUIElementCreateApplication(processIdentifier)` で選択元アプリの Accessibility 要素を作成
-5. `kAXFocusedUIElementAttribute` から選択元アプリ内の focused element を取得
-6. focused element の `kAXSelectedTextAttribute` から選択中の文字列を取得。
-   属性取得失敗 or 空文字列 → 「テキストが選択されていない」フィードバック
+3. `NSWorkspace.shared.frontmostApplication` から選択元アプリ名を取得
+4. `NSPasteboard.general.changeCount` を記録
+5. 最前面のアプリへ Cmd+C を送信
+6. 上限 1 秒間、50ms 間隔で pasteboard の更新を待つ。最初の空でない文字列を取得し、
+   pasteboard に残す。更新なし or 空文字列 → 「テキストが選択されていない」フィードバック
 7. `NewDocument(text:, sourceAppName:, sourceMachineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName, capturedAt: .now)`
    を `client.createDocument()` で POST
 8. フィードバック (成功/失敗の全パスで必ず 1 回):
@@ -482,11 +486,12 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
 
 ## リスク・注意点
 
-1. App Sandbox OFF は必須 (他アプリに対する Accessibility API の利用が App Sandbox の制限対象のため)。
+1. App Sandbox OFF は必須 (他アプリへ Cmd+C を送信するため)。
    App Store 配布は不可の設計 — 個人利用なので許容
 2. Accessibility の信頼はバイナリ署名単位。personal team の安定した証明書で署名し、
    テストは一貫した場所 (Xcode 実行 or /Applications) から行う
-3. アプリや UI 要素が `kAXSelectedTextAttribute` を提供しない場合は取得不可 → 明示フィードバック
+3. Cmd+C の待機中に別のアプリが pasteboard へ文字列を書き込むと、その文字列を取得する
+   可能性がある。個人用ツールの簡潔さを優先し、アプリ固有連携は追加しない
 4. FirebaseAuth macOS の keychain エラー → keychain-access-groups entitlement で対策
 5. MarkdownUI のダークモード → カスタム Theme 必須
 6. iOS 18 TextSelection が不安定なら UITextView representable に差し替え (plan B)

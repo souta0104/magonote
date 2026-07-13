@@ -13,14 +13,19 @@ final class CaptureController {
     private(set) var lastMessage: String?
 
     private let sessionStore: SessionStore
+    private let selectionTextReader: any SelectionTextReading
     private var feedbackResetTask: Task<Void, Never>?
 
     var isAccessibilityTrusted: Bool {
         AXIsProcessTrusted()
     }
 
-    init(sessionStore: SessionStore) {
+    init(
+        sessionStore: SessionStore,
+        selectionTextReader: any SelectionTextReading = PasteboardSelectionTextReader()
+    ) {
         self.sessionStore = sessionStore
+        self.selectionTextReader = selectionTextReader
 
         KeyboardShortcuts.onKeyUp(for: .readerCapture) { [weak self] in
             Task { @MainActor in
@@ -84,7 +89,9 @@ final class CaptureController {
         }
 
         let sourceAppName = sourceApplication.localizedName ?? "Unknown"
-        let text = try selectedTextFromFocusedElement(in: sourceApplication)
+        guard let text = await selectionTextReader.read() else {
+            throw CaptureError.nothingSelected
+        }
 
         let newDocument = NewDocument(
             text: text,
@@ -99,49 +106,6 @@ final class CaptureController {
             sourceAppName: sourceAppName,
             characterCount: text.count
         )
-    }
-
-    private func selectedTextFromFocusedElement(
-        in application: NSRunningApplication
-    ) throws -> String {
-        let applicationElement = AXUIElementCreateApplication(
-            application.processIdentifier
-        )
-        var focusedElementValue: CFTypeRef?
-        let focusedElementResult = AXUIElementCopyAttributeValue(
-            applicationElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedElementValue
-        )
-
-        guard
-            focusedElementResult == .success,
-            let focusedElementValue,
-            CFGetTypeID(focusedElementValue) == AXUIElementGetTypeID()
-        else {
-            throw CaptureError.nothingSelected
-        }
-
-        let focusedElement = unsafeDowncast(
-            focusedElementValue,
-            to: AXUIElement.self
-        )
-        var selectedTextValue: CFTypeRef?
-        let selectedTextResult = AXUIElementCopyAttributeValue(
-            focusedElement,
-            kAXSelectedTextAttribute as CFString,
-            &selectedTextValue
-        )
-
-        guard
-            selectedTextResult == .success,
-            let text = selectedTextValue as? String,
-            !text.isEmpty
-        else {
-            throw CaptureError.nothingSelected
-        }
-
-        return text
     }
 
     private func requestNotificationAuthorizationIfNeeded() async {
