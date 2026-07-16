@@ -12,7 +12,11 @@ enum JSONCoding {
 
     static let apiEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .millisecondsSince1970
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            let milliseconds = Int64(date.timeIntervalSince1970 * 1_000)
+            try container.encode(milliseconds)
+        }
         return encoder
     }()
 }

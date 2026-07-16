@@ -17,7 +17,8 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
 
 - 命名: 総称 magonote / アプリ名 Magonote (mac, ios) / 今回のツールは Reader。
   ツール追加に備えて API ルート・D1 テーブル・アプリ内フォルダはツール名で名前空間を切る
-- 選択テキスト取得: ショートカット検知 → CGEvent で Cmd+C 発行 → クリップボード読み取り → 復元
+- 選択テキスト取得: 最前面アプリへ Cmd+C を送信し、general pasteboard に書き込まれた
+  文字列を取得。取得した文字列は pasteboard に残し、開始前の内容へ復元しない
 - コメントのアンカー: 引用テキスト方式 (選択文字列をコメントに quote として保存。オフセット保存やハイライトはしない)
 - プロジェクト管理: XcodeGen (xcodeproj は git-ignore)
 - Firebase プロジェクトは新規作成、Cloudflare はアカウントあり・wrangler 未ログイン
@@ -118,7 +119,7 @@ Mac 上で選択したテキストをショートカット一発でサーバー�
         │   ├── Session/           # SessionStore (Firebase/GoogleSignIn)
         │   ├── SettingsView.swift # アカウント / 権限 / サーバー URL / ツールごとの設定セクション
         │   ├── Magonote.entitlements
-        │   └── Tools/Reader/      # CaptureController (hotkey → pasteboard → POST)
+        │   └── Tools/Reader/      # CaptureController (hotkey → Accessibility → POST)
         └── GoogleService-Info.plist   # git-ignore
 ```
 
@@ -346,7 +347,10 @@ menu bar 常駐アプリ。Reader のキャプチャ機能を最初のツール�
 - Support/APIClientFactory.swift: UserDefaults の `serverBaseURL` (デフォルトは prod URL) から
   `MagonoteAPIClient` を組み立てる。設定画面の URL 変更が次のリクエストから効く
 - Tools/Reader/CaptureController.swift (@Observable, @MainActor): 下記フローだけを持ち、
-  通信は MagonoteAPIClient に、認証は SessionStore に委譲 (SRP)
+  選択文字列の取得は SelectionTextReading に、通信は MagonoteAPIClient に、認証は
+  SessionStore に委譲 (SRP)
+- Tools/Reader/SelectionTextReader.swift: Cmd+C の送信と general pasteboard の更新待機を担当。
+  pasteboard の snapshot、消去、復元は行わない
 - SettingsView.swift: TabView 構成 —
   - アカウント: ログイン状態 (メールアドレス表示)、サインイン/サインアウトボタン、UID の
     コピーボタン (ALLOWED_UID 設定用)
@@ -370,17 +374,14 @@ CaptureController.capture() を呼ぶ。
 1. `AXIsProcessTrusted()` を guard。false なら `AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt: true])`
    で OS のプロンプトを出し、failure フィードバック
 2. `SessionStore.isSignedIn` を guard。false なら「サインインが必要」フィードバック
-3. 最前面アプリ名を先に取得 (`NSWorkspace.shared.frontmostApplication?.localizedName ?? "Unknown"`) —
-   Cmd+C 発行後ではフォーカスの根拠が失われるため必ず先
-4. pasteboard を snapshot (changeCount + string item。string のみ復元で許容、コードにコメントで明記)
-5. `CGEventSource(stateID: .combinedSessionState)` で kVK_ANSI_C + `.maskCommand` の
-   keyDown/keyUp を `post(tap: .cghidEventTap)`
-6. `NSPasteboard.general.changeCount` を 50ms 間隔で最大 1 秒ポーリング。
-   変化なし or 空文字列 → snapshot 復元して「テキストが選択されていない」フィードバック (ハングさせない)
-7. テキスト読み取り後、即 snapshot を復元
-8. `NewDocument(text:, sourceAppName:, sourceMachineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName, capturedAt: .now)`
+3. `NSWorkspace.shared.frontmostApplication` から選択元アプリ名を取得
+4. `NSPasteboard.general.changeCount` を記録
+5. 最前面のアプリへ Cmd+C を送信
+6. 上限 1 秒間、50ms 間隔で pasteboard の更新を待つ。最初の空でない文字列を取得し、
+   pasteboard に残す。更新なし or 空文字列 → 「テキストが選択されていない」フィードバック
+7. `NewDocument(text:, sourceAppName:, sourceMachineName: Host.current().localizedName ?? ProcessInfo.processInfo.hostName, capturedAt: .now)`
    を `client.createDocument()` で POST
-9. フィードバック (成功/失敗の全パスで必ず 1 回):
+8. フィードバック (成功/失敗の全パスで必ず 1 回):
    - 成功: 通知「Xcode から 1,234 文字をキャプチャ」+ アイコン success
    - 失敗: 通知にエラー内容 (未選択 / 未サインイン / 権限なし / 通信失敗) + アイコン failure
    - 通知は UserNotifications (初回キャプチャ時に requestAuthorization)。許可されなくても
@@ -474,7 +475,7 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
   wrangler deploy して prod /api/health curl。実 token での検証は DEV-6 の初 POST で行う
 - DEV-5 MagonoteKit: models → client → URLProtocol tests。検証: swift test
 - DEV-6 macOS アプリ: (1) XcodeGen skeleton + MenuBarExtra 起動 →
-  (2) hotkey + capture をコンソール出力で検証 (pasteboard 復元も確認) →
+  (2) hotkey と menu bar の両方から選択元アプリの文字列を取得できることを検証 →
   (3) Google sign-in、コンソールの UID を wrangler secret put ALLOWED_UID →
   (4) wrangler dev への POST を d1 execute --local の select で確認 → (5) prod へ向けて通知確認
 - DEV-7 iOS アプリ: (1) skeleton + login → (2) 一覧 + pagination (DEV-6 の実データで) →
@@ -485,10 +486,12 @@ Color(.secondarySystemBackground) などの semantic color にしたカスタム
 
 ## リスク・注意点
 
-1. App Sandbox OFF は必須 (CGEvent 送出のため)。App Store 配布は不可の設計 — 個人利用なので許容
+1. App Sandbox OFF は必須 (他アプリへ Cmd+C を送信するため)。
+   App Store 配布は不可の設計 — 個人利用なので許容
 2. Accessibility の信頼はバイナリ署名単位。personal team の安定した証明書で署名し、
    テストは一貫した場所 (Xcode 実行 or /Applications) から行う
-3. Cmd+C レース: changeCount ポーリングで対応。未選択時のタイムアウト → 明示フィードバック
+3. Cmd+C の待機中に別のアプリが pasteboard へ文字列を書き込むと、その文字列を取得する
+   可能性がある。個人用ツールの簡潔さを優先し、アプリ固有連携は追加しない
 4. FirebaseAuth macOS の keychain エラー → keychain-access-groups entitlement で対策
 5. MarkdownUI のダークモード → カスタム Theme 必須
 6. iOS 18 TextSelection が不安定なら UITextView representable に差し替え (plan B)
