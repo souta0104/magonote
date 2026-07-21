@@ -26,15 +26,75 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 
 ## セットアップ
 
-セットアップ手順 (Firebase プロジェクト作成、Cloudflare リソース作成、XcodeGen での
-プロジェクト生成など) は各コンポーネントの実装が揃った段階でこのセクションに追記する
-(Linear DEV-8 で最終化予定)。
-
 公開リポジトリのため、以下は git 管理外 (`.gitignore` 参照) — 各自で用意すること:
 
 - `apps/ios/GoogleService-Info.plist`
 - `apps/macos/GoogleService-Info.plist`
 - `server/.dev.vars`
 
-D1 のスキーマ (`server/schema.sql`) の適用には `sqlite3def` が必要
-(`brew install sqldef/sqldef/sqlite3def`)。
+### 前提ツール
+
+- Node.js (npm)
+- Xcode 16+ (iOS 18 / macOS 14 SDK)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+- [Wrangler](https://developers.cloudflare.com/workers/wrangler/) (`server/` の devDependencies に含まれるため `npm install` 後は `npx wrangler` で使える)
+- `sqlite3def` (`brew install sqldef/sqldef/sqlite3def`) — D1 スキーマ適用に使用
+
+### Firebase
+
+Firebase project `magonote-souta0104` を使用する。
+
+1. [Firebase Console](https://console.firebase.google.com/) でこの project を開き、
+   Authentication → Sign-in method → Google が有効なことを確認する。
+2. project 内の iOS app (`app.soprog.magonote.ios`) と macOS app
+   (`app.soprog.magonote.macos`) それぞれの `GoogleService-Info.plist` をダウンロードし、
+   `apps/ios/` `apps/macos/` に配置する。
+
+新規に project を作り直す場合は、Google プロバイダ有効化 → 上記 2 つの Bundle ID で
+app を登録 → plist ダウンロード、の順で行う。
+
+### Cloudflare
+
+Worker `magonote-api`、D1 `magonote`、KV `FIREBASE_CERT_CACHE` は Cloudflare account
+(KNOCK と共有、[DEV-9](https://linear.app/soprog/issue/DEV-9) 参照) 上に作成済みで、
+`server/wrangler.jsonc` に database_id / KV id が反映されている。
+
+1. `npx wrangler login` で同じ account にログインする。
+2. `server/.dev.vars` に以下を設定する (ローカル開発用、本番の secret とは別管理):
+
+   ```
+   FIREBASE_PROJECT_ID=magonote-souta0104
+   ALLOWED_UID=<自分の Firebase UID>
+   ```
+
+   `ALLOWED_UID` は Firebase Authentication でログインした自分のアカウントの UID。
+   本番の同名 secret は `npx wrangler secret put ALLOWED_UID` で別途設定済み。
+
+D1/KV を初めて作る場合は `wrangler d1 create magonote` /
+`wrangler kv namespace create FIREBASE_CERT_CACHE` で作成し、出力された id を
+`wrangler.jsonc` に転記する。
+
+### Server (`server/`)
+
+```sh
+npm install
+npm run db:apply:local   # ローカル D1 に schema.sql を適用
+npm test                 # vitest
+npm run dev              # wrangler dev (http://localhost:8787)
+npm run deploy           # 本番デプロイ (wrangler deploy)
+```
+
+`npm run db:diff:remote` / `npm run db:apply:remote` で本番 D1 との差分確認・適用ができる。
+
+### iOS / macOS アプリ (`apps/ios/`, `apps/macos/`)
+
+各ディレクトリで以下を実行する (GoogleService-Info.plist を配置済みであること)。
+
+```sh
+cd apps/ios    # または apps/macos
+xcodegen generate
+open Magonote.xcodeproj
+```
+
+Xcode で Team を選択して署名し、Run する。macOS 版は初回起動時に Accessibility 権限の
+許可が必要 (メニューの案内に従う)。
