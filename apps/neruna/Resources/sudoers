@@ -1,0 +1,1 @@
+%admin ALL=(root) NOPASSWD: /usr/local/libexec/neruna-helper apply-on, /usr/local/libexec/neruna-helper apply-off, /usr/local/libexec/neruna-helper status

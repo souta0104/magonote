@@ -1,0 +1,96 @@
+name: Neruna
+
+options:
+  bundleIdPrefix: app.soprog
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  SWIFT_VERSION: 6.0
+  CODE_SIGN_STYLE: Automatic
+  ENABLE_APP_SANDBOX: NO
+
+targets:
+  NerunaCore:
+    type: library.static
+    platform: macOS
+    sources:
+      - NerunaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.neruna.core
+        PRODUCT_MODULE_NAME: NerunaCore
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+
+  neruna-helper:
+    type: tool
+    platform: macOS
+    sources:
+      - NerunaHelper
+    dependencies:
+      - target: NerunaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.neruna.helper
+        PRODUCT_NAME: neruna-helper
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+
+  Neruna:
+    type: application
+    platform: macOS
+    sources:
+      - path: Neruna
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - target: NerunaCore
+      - target: neruna-helper
+    postBuildScripts:
+      - name: Embed neruna-helper
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          DEST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Helpers"
+          mkdir -p "${DEST}"
+          /bin/cp "${BUILT_PRODUCTS_DIR}/neruna-helper" "${DEST}/neruna-helper"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.neruna
+        PRODUCT_NAME: Neruna
+    info:
+      path: Neruna/Info.plist
+      properties:
+        CFBundleDisplayName: 寝るな
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+    entitlements:
+      path: Neruna/Neruna.entitlements
+
+  NerunaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - NerunaTests
+    dependencies:
+      - target: Neruna
+      - target: NerunaCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.neruna.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Neruna:
+    build:
+      targets:
+        Neruna: all
+        neruna-helper: all
+        NerunaCore: all
+    test:
+      targets:
+        - NerunaTests

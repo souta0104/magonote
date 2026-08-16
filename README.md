@@ -6,6 +6,9 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 最初のツールは **Magonote Reader**: Mac 上で選択したテキストをショートカット一発で
 サーバーに保存し、iPhone の見やすいビューワーで読む。
 
+システム寄りの補助アプリとして、macOS メニューバーアプリ **寝るな** もある。
+電源接続中は MacBook の蓋を閉じてもスリープせず、codex などのプロセスを動かし続けられる。
+
 設計の詳細は [`docs/superpowers/specs/2026-07-10-magonote-reader-design.md`](docs/superpowers/specs/2026-07-10-magonote-reader-design.md) を参照。
 進捗・意思決定ログは Linear [DEV-1](https://linear.app/soprog/issue/DEV-1/magonote-reader-爆誕) 配下で管理している。
 
@@ -14,6 +17,7 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 - Firebase project: `magonote-souta0104`
 - iOS Bundle ID: `app.soprog.magonote.ios`
 - macOS Bundle ID: `app.soprog.magonote.macos`
+- 寝るな Bundle ID: `app.soprog.magonote.neruna`
 
 ## リポジトリ構成
 
@@ -21,7 +25,8 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 ├── server/            # magonote API (TypeScript, Hono, Cloudflare Workers, D1)
 ├── packages/MagonoteKit/  # iOS/macOS 共有 SPM パッケージ
 ├── apps/ios/          # iOS アプリ「Magonote」(XcodeGen)
-└── apps/macos/         # macOS アプリ「Magonote」(XcodeGen)
+├── apps/macos/         # macOS アプリ「Magonote」(XcodeGen)
+└── apps/neruna/        # macOS メニューバーアプリ「寝るな」(XcodeGen)
 ```
 
 ## セットアップ
@@ -98,3 +103,17 @@ open Magonote.xcodeproj
 
 Xcode で Team を選択して署名し、Run する。macOS 版は初回起動時に Accessibility 権限の
 許可が必要 (メニューの案内に従う)。
+
+### 寝るな (`apps/neruna/`)
+
+蓋を閉じたまま起き続けるのは電源接続中だけである。電池では蓋を閉じるとスリープする。
+この条件はメニューバーアプリではなく root の LaunchDaemon が守る。
+
+```sh
+cd apps/neruna
+xcodegen generate
+./scripts/install.sh
+```
+
+`install.sh` は Release ビルドを `/Applications/Neruna.app` に置いて起動する。
+初回起動時に、蓋閉じスリープを止める helper の導入で管理者パスワードを求められる。
