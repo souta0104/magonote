@@ -83,6 +83,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.neruna.tests
         GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/neruna.app/Contents/MacOS/neruna"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 
 schemes:
   Neruna:

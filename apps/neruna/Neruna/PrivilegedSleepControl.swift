@@ -11,11 +11,11 @@ struct PrivilegedSleepControlError: LocalizedError {
 
 struct PrivilegedSleepControl: Sendable {
     func ensureInstalled() throws {
-        if canCallHelper() {
+        if isCurrentHelperInstalled() {
             return
         }
         try HelperInstaller.install()
-        guard canCallHelper() else {
+        guard isCurrentHelperInstalled() else {
             throw PrivilegedSleepControlError(
                 message: "管理者権限の helper を導入できませんでした"
             )
@@ -27,8 +27,11 @@ struct PrivilegedSleepControl: Sendable {
         _ = try runHelper(invocation, stdin: try configuration.fileContents())
     }
 
-    private func canCallHelper() -> Bool {
-        (try? runHelper(.status)) != nil
+    private func isCurrentHelperInstalled() -> Bool {
+        guard let status = try? runHelper(.status) else {
+            return false
+        }
+        return HelperProtocol.isCompatible(statusOutput: status)
     }
 
     @discardableResult

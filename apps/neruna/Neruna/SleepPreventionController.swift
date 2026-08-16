@@ -19,6 +19,7 @@ final class SleepPreventionController {
     private let defaults: UserDefaults
     private let assertion: IdleSleepAssertion
     private let privilegedControl: PrivilegedSleepControl
+    private let clamshellMonitor: ClamshellMonitor
     private var didStart = false
     private var previouslyKeepingAwake: Bool?
     private var refreshTask: Task<Void, Never>?
@@ -26,11 +27,13 @@ final class SleepPreventionController {
     init(
         defaults: UserDefaults = .standard,
         assertion: IdleSleepAssertion = IdleSleepAssertion(),
-        privilegedControl: PrivilegedSleepControl = PrivilegedSleepControl()
+        privilegedControl: PrivilegedSleepControl = PrivilegedSleepControl(),
+        clamshellMonitor: ClamshellMonitor = ClamshellMonitor()
     ) {
         self.defaults = defaults
         self.assertion = assertion
         self.privilegedControl = privilegedControl
+        self.clamshellMonitor = clamshellMonitor
         self.configuration = Self.loadConfiguration(from: defaults)
         self.power = PowerSnapshotReader.current()
         self.now = Date()
@@ -87,6 +90,7 @@ final class SleepPreventionController {
         }
 
         await applyCurrentState()
+        startClamshellMonitor()
         startRefreshLoop()
     }
 
@@ -136,6 +140,22 @@ final class SleepPreventionController {
             lastErrorMessage = error.localizedDescription
         }
         NSApplication.shared.terminate(nil)
+    }
+
+    private func startClamshellMonitor() {
+        clamshellMonitor.onClosed = { [weak self] in
+            Task { @MainActor in
+                self?.turnDisplayOffIfKeepingProcessesAwake()
+            }
+        }
+        clamshellMonitor.start()
+    }
+
+    private func turnDisplayOffIfKeepingProcessesAwake() {
+        guard policy.shouldKeepAwake else {
+            return
+        }
+        DisplaySleep.request()
     }
 
     private func startRefreshLoop() {

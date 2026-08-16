@@ -12,7 +12,7 @@ IOKit の sleep assertion や `caffeinate` はアイドル時のスリープし�
 
 - アプリ名は `neruna`、バンドルは `neruna.app`、Bundle ID は `app.soprog.magonote.neruna`
 - Magonote 本体には入れない。認証も API もなく、起動寿命も権限モデルも Reader と異なるため、独立した macOS アプリにする
-- neruna がオンなら、電源の有無に関係なく蓋を閉じてもスリープしない
+- neruna がオンなら、蓋を閉じてもプロセスは動き続ける。画面の消灯とロックはシステムの設定に従う
 - 電池残量が設定値を下回ったらスリープする。初期値は 15%。電源接続中は見ない
 - オンにしてから設定時間がたったらスリープし、neruna をオフにする。初期値は制限なし
 - `pmset disablesleep` はメニューバーアプリではなく、root の LaunchDaemon が維持する
@@ -48,7 +48,8 @@ apps/neruna/
 
 `SleepPreventionPolicy` が唯一の判定表である。
 
-- neruna がオンで、電池ガードも時間ガードも満たさない → 起き続ける
+- neruna がオンで、電池ガードも時間ガードも満たさない → プロセスは起き続ける。画面スリープは止めない
+- 蓋を閉じたら `pmset displaysleepnow` して、ロックはシステムの「画面オフ後にパスワード」設定に任せる
 - 電池が設定値未満、または時間切れ → `pmset sleepnow` し、蓋閉じスリープも許可する
 - 時間切れは desired を off にする。電池ガードは充電が戻るまで latch し、desired は on のまま
 - 電池ガードの復帰は、設定値 + 5% を超えたとき、または電源接続時
@@ -59,7 +60,7 @@ apps/neruna/
 |---|---|---|
 | `apply-on` | アプリが `sudo -n` で呼ぶ。stdin に JSON を渡す | 設定を書き、policy を適用する |
 | `apply-off` | アプリが `sudo -n` で呼ぶ。stdin に JSON を渡す | 設定を書き、policy を適用する |
-| `status` | アプリが `sudo -n` で呼ぶ | desired / reason / 電池 / SleepDisabled を出す |
+| `status` | アプリが `sudo -n` で呼ぶ | protocol / desired / reason / 電池 / SleepDisabled を出す |
 | `run` | LaunchDaemon だけ | 起動時と 5 秒ごとの確認で policy を再適用する |
 
 LaunchDaemon はアプリが死んでいても、同じ判定表で `disablesleep` を維持し、ガード成立時はスリープする。

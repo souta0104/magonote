@@ -4,12 +4,12 @@ public enum SleepPreventionStatusText: Sendable {
     public static func text(for policy: SleepPreventionPolicy) -> String {
         switch policy.reason {
         case .off:
-            return "オフ。蓋を閉じるとスリープします"
+            return "オフ。蓋を閉じるとプロセスも止まります"
         case .keepingAwake:
             if let remaining = remainingText(policy.remainingDuration) {
-                return "オン。蓋を閉じても起きています。\(remaining)"
+                return "オン。蓋を閉じてもプロセスは動きます。画面は設定どおり消えてロックします。\(remaining)"
             }
-            return "オン。蓋を閉じても起きています"
+            return "オン。蓋を閉じてもプロセスは動きます。画面は設定どおり消えてロックします"
         case .batteryLow:
             if let percent = policy.power.batteryPercent {
                 return "電池 \(percent)%。スリープします"

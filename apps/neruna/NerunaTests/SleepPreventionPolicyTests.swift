@@ -280,7 +280,7 @@ final class SleepPreventionStatusTextTests: XCTestCase {
                     now: now
                 )
             ),
-            "オフ。蓋を閉じるとスリープします"
+            "オフ。蓋を閉じるとプロセスも止まります"
         )
         XCTAssertEqual(
             SleepPreventionStatusText.text(
@@ -294,7 +294,7 @@ final class SleepPreventionStatusTextTests: XCTestCase {
                     now: now
                 )
             ),
-            "オン。蓋を閉じても起きています"
+            "オン。蓋を閉じてもプロセスは動きます。画面は設定どおり消えてロックします"
         )
     }
 
@@ -336,5 +336,22 @@ final class SleepPreventionStatusTextTests: XCTestCase {
             ),
             "moon.zzz"
         )
+    }
+}
+
+final class HelperProtocolTests: XCTestCase {
+    func testAcceptsCurrentProtocol() {
+        XCTAssertTrue(
+            HelperProtocol.isCompatible(statusOutput: "protocol=2\ndesired=on\n")
+        )
+        XCTAssertTrue(
+            HelperProtocol.isCompatible(statusOutput: "protocol=3\n")
+        )
+    }
+
+    func testRejectsLegacyHelperStatus() {
+        XCTAssertFalse(HelperProtocol.isCompatible(statusOutput: "desired=on\nsleepDisabled=0\n"))
+        XCTAssertFalse(HelperProtocol.isCompatible(statusOutput: "protocol=1\n"))
+        XCTAssertFalse(HelperProtocol.isCompatible(statusOutput: ""))
     }
 }

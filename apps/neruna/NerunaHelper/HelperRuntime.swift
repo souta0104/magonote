@@ -136,6 +136,7 @@ final class HelperRuntime: @unchecked Sendable {
         }
         let batteryText = policy.power.batteryPercent.map(String.init) ?? "unknown"
 
+        print("protocol=\(HelperProtocol.version)")
         print("desired=\(configuration.desired.rawValue)")
         print("reason=\(policy.reason.label)")
         print("battery=\(batteryText)")
