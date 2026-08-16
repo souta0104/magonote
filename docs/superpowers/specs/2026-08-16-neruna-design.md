@@ -1,4 +1,4 @@
-# 寝るな (Neruna)
+# neruna
 
 MacBook の蓋を閉じてもプロセスを動かし続けるための macOS メニューバーアプリ。
 
@@ -10,19 +10,19 @@ IOKit の sleep assertion や `caffeinate` はアイドル時のスリープし�
 
 ## 合意
 
-- アプリ名は「寝るな」、バンドルは `Neruna.app`、Bundle ID は `app.soprog.magonote.neruna`
+- アプリ名は `neruna`、バンドルは `neruna.app`、Bundle ID は `app.soprog.magonote.neruna`
 - Magonote 本体には入れない。認証も API もなく、起動寿命も権限モデルも Reader と異なるため、独立した macOS アプリにする
-- 寝るながオンなら、電源の有無に関係なく蓋を閉じてもスリープしない
+- neruna がオンなら、電源の有無に関係なく蓋を閉じてもスリープしない
 - 電池残量が設定値を下回ったらスリープする。初期値は 15%。電源接続中は見ない
-- オンにしてから設定時間がたったらスリープし、寝るなをオフにする。初期値は制限なし
+- オンにしてから設定時間がたったらスリープし、neruna をオフにする。初期値は制限なし
 - `pmset disablesleep` はメニューバーアプリではなく、root の LaunchDaemon が維持する
-- ログイン時に起動する。初回起動時は「寝るな」をオンにする
+- ログイン時に起動する。初回起動時は neruna をオンにする
 
 ## ユビキタス言語
 
 | 概念 | 定義 | コード | UI |
 |---|---|---|---|
-| 寝るな | 蓋を閉じてもスリープしないようにする機能全体 | `Neruna` | 寝るな |
+| neruna | 蓋を閉じてもスリープしないようにする機能全体 | `Neruna` | neruna |
 | Desired awake | 利用者が「起きていてほしい」と望んでいるか | `DesiredAwakeState` | オン / オフ |
 | Lid-close sleep | 蓋を閉じたときにシステムがスリープすること | `shouldKeepAwakeWithLidClosed` | 蓋を閉じても起きている |
 | Idle sleep | 操作がないときにシステムがスリープすること | `shouldPreventIdleSleep` | (メニューには出さない) |
@@ -48,7 +48,7 @@ apps/neruna/
 
 `SleepPreventionPolicy` が唯一の判定表である。
 
-- 寝るながオンで、電池ガードも時間ガードも満たさない → 起き続ける
+- neruna がオンで、電池ガードも時間ガードも満たさない → 起き続ける
 - 電池が設定値未満、または時間切れ → `pmset sleepnow` し、蓋閉じスリープも許可する
 - 時間切れは desired を off にする。電池ガードは充電が戻るまで latch し、desired は on のまま
 - 電池ガードの復帰は、設定値 + 5% を超えたとき、または電源接続時

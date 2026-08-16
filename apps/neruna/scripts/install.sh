@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEAM_ID="${DEVELOPMENT_TEAM:-FSC6UXXNH2}"
 DERIVED="${ROOT}/.build"
-APP_DEST="/Applications/Neruna.app"
+APP_DEST="/Applications/neruna.app"
 
 cd "${ROOT}"
 xcodegen generate
@@ -19,7 +19,7 @@ xcodebuild \
   CODE_SIGN_STYLE=Automatic \
   build
 
-APP_SRC="${DERIVED}/Build/Products/Release/Neruna.app"
+APP_SRC="${DERIVED}/Build/Products/Release/neruna.app"
 
 if [[ ! -d "${APP_SRC}" ]]; then
   echo "Release app was not built at ${APP_SRC}" >&2

@@ -60,11 +60,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.soprog.magonote.neruna
-        PRODUCT_NAME: Neruna
+        PRODUCT_NAME: neruna
     info:
       path: Neruna/Info.plist
       properties:
-        CFBundleDisplayName: 寝るな
+        CFBundleDisplayName: neruna
         CFBundleShortVersionString: "1.0"
         CFBundleVersion: "1"
         LSUIElement: true

@@ -38,7 +38,7 @@ private struct MenuBarContentView: View {
     @Environment(SleepPreventionController.self) private var controller
 
     var body: some View {
-        Button(controller.isEnabled ? "寝るな: オン" : "寝るな: オフ") {
+        Button(controller.isEnabled ? "neruna: オン" : "neruna: オフ") {
             Task {
                 await controller.toggleEnabled()
             }
@@ -94,7 +94,7 @@ private struct MenuBarContentView: View {
 
         Divider()
 
-        Button("寝るなを終了") {
+        Button("neruna を終了") {
             Task {
                 await controller.quit()
             }
