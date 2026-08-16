@@ -3,7 +3,9 @@ import NerunaCore
 
 protocol HelperEnvironment: Sendable {
     var isRoot: Bool { get }
+    func currentPower() -> PowerSnapshot
     func setKeepAwakeWithLidClosed(_ keepAwake: Bool) throws
+    func sleepNow() throws
     func pmsetCustomOutput() throws -> String
     func startPeriodicRefresh(interval: TimeInterval, handler: @escaping @Sendable () -> Void)
     func runLoop()
@@ -16,12 +18,20 @@ final class LiveHelperEnvironment: HelperEnvironment, @unchecked Sendable {
         geteuid() == 0
     }
 
+    func currentPower() -> PowerSnapshot {
+        PowerSnapshotReader.current()
+    }
+
     func setKeepAwakeWithLidClosed(_ keepAwake: Bool) throws {
         let current = try pmsetCustomOutput()
         if SleepDisabledStatus.isDisabled(pmsetOutput: current) == keepAwake {
             return
         }
         try runPmset(arguments: SleepDisabledCommand.arguments(keepAwakeWithLidClosed: keepAwake))
+    }
+
+    func sleepNow() throws {
+        try runPmset(arguments: SleepDisabledCommand.sleepNowArguments)
     }
 
     func pmsetCustomOutput() throws -> String {

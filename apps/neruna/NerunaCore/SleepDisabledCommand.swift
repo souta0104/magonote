@@ -4,6 +4,8 @@ public enum SleepDisabledCommand: Sendable {
     public static func arguments(keepAwakeWithLidClosed: Bool) -> [String] {
         ["-a", "disablesleep", keepAwakeWithLidClosed ? "1" : "0"]
     }
+
+    public static let sleepNowArguments = ["sleepnow"]
 }
 
 public enum SleepDisabledStatus: Sendable {

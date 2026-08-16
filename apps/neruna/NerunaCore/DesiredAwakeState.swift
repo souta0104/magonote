@@ -1,6 +1,6 @@
 import Foundation
 
-public enum DesiredAwakeState: String, Sendable {
+public enum DesiredAwakeState: String, Codable, Sendable {
     case on
     case off
 

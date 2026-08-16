@@ -1,4 +1,5 @@
 import AppKit
+import NerunaCore
 import SwiftUI
 
 @main
@@ -14,6 +15,11 @@ struct NerunaApp: App {
                 .accessibilityLabel(appDelegate.controller.menuAccessibilityLabel)
         }
         .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsView()
+                .environment(appDelegate.controller)
+        }
     }
 }
 
@@ -42,6 +48,42 @@ private struct MenuBarContentView: View {
 
         if let message = controller.lastErrorMessage {
             Text(message)
+        }
+
+        Divider()
+
+        Menu(controller.batteryGuardMenuTitle) {
+            Button("オフ") {
+                Task {
+                    await controller.setBatteryThreshold(nil)
+                }
+            }
+            ForEach(AwakeConfiguration.batteryPresets, id: \.self) { percent in
+                Button("\(percent)%") {
+                    Task {
+                        await controller.setBatteryThreshold(percent)
+                    }
+                }
+            }
+        }
+
+        Menu(controller.durationGuardMenuTitle) {
+            Button("オフ") {
+                Task {
+                    await controller.setDurationHours(nil)
+                }
+            }
+            ForEach(AwakeConfiguration.durationHourPresets, id: \.self) { hours in
+                Button("\(hours) 時間") {
+                    Task {
+                        await controller.setDurationHours(hours)
+                    }
+                }
+            }
+        }
+
+        SettingsLink {
+            Text("設定…")
         }
 
         Divider()

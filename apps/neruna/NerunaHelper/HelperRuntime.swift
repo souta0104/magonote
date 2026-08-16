@@ -1,9 +1,11 @@
+import Darwin
 import Foundation
 import NerunaCore
 
 final class HelperRuntime: @unchecked Sendable {
     private let fileManager: FileManager
     private let environment: HelperEnvironment
+    private var previouslyKeepingAwake: Bool?
 
     init(
         fileManager: FileManager = .default,
@@ -21,12 +23,10 @@ final class HelperRuntime: @unchecked Sendable {
         switch invocation {
         case .applyOn:
             try requireRoot()
-            try writeDesired(.on)
-            try applyGate()
+            try applyIncoming(desired: .on)
         case .applyOff:
             try requireRoot()
-            try writeDesired(.off)
-            try applyGate()
+            try applyIncoming(desired: .off)
         case .status:
             try requireRoot()
             try printStatus()
@@ -42,41 +42,88 @@ final class HelperRuntime: @unchecked Sendable {
         }
     }
 
-    private func writeDesired(_ state: DesiredAwakeState) throws {
+    private func applyIncoming(desired: DesiredAwakeState) throws {
+        if let incoming = try readStdinConfiguration() {
+            try writeConfiguration(incoming)
+        } else {
+            var configuration = try readConfiguration()
+            if desired == .on, configuration.desired == .off {
+                configuration.enabledAt = Date()
+            }
+            if desired == .off {
+                configuration.enabledAt = nil
+                configuration.batteryGuardLatched = false
+            }
+            configuration.desired = desired
+            try writeConfiguration(configuration)
+        }
+        try applyGate(sleepNowOnTransition: false)
+    }
+
+    private func readStdinConfiguration() throws -> AwakeConfiguration? {
+        if isatty(FileHandle.standardInput.fileDescriptor) != 0 {
+            return nil
+        }
+        let data = FileHandle.standardInput.readDataToEndOfFile()
+        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return try AwakeConfiguration.parse(fileContents: text)
+    }
+
+    private func writeConfiguration(_ configuration: AwakeConfiguration) throws {
         let url = URL(fileURLWithPath: NerunaPaths.desiredStatePath)
         try fileManager.createDirectory(
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try state.fileContents.write(to: url, atomically: true, encoding: .utf8)
+        try configuration.fileContents().write(to: url, atomically: true, encoding: .utf8)
     }
 
-    private func readDesired() throws -> DesiredAwakeState {
+    private func readConfiguration() throws -> AwakeConfiguration {
         let url = URL(fileURLWithPath: NerunaPaths.desiredStatePath)
         guard fileManager.fileExists(atPath: url.path) else {
-            return .off
+            return AwakeConfiguration()
         }
         let contents = try String(contentsOf: url, encoding: .utf8)
-        return DesiredAwakeState(fileContents: contents)
+        return try AwakeConfiguration.parse(fileContents: contents)
     }
 
-    private func applyGate() throws {
-        try makeGate().apply()
+    private func applyGate(sleepNowOnTransition: Bool) throws {
+        let keepingAwake = try makeGate().apply(
+            sleepNowOnTransition: sleepNowOnTransition,
+            previouslyKeepingAwake: previouslyKeepingAwake
+        )
+        previouslyKeepingAwake = keepingAwake
     }
 
     private func makeGate() -> SleepGate {
         SleepGate(
-            readDesired: { [self] in
-                try self.readDesired()
+            readConfiguration: { [self] in
+                try self.readConfiguration()
             },
-            setKeepAwakeWithLidClosed: { [environment] keepAwake in
+            readPower: { [environment] in
+                environment.currentPower()
+            },
+            writeConfiguration: { [self] configuration in
+                try self.writeConfiguration(configuration)
+            },
+            setKeepAwake: { [environment] keepAwake in
                 try environment.setKeepAwakeWithLidClosed(keepAwake)
+            },
+            sleepNow: { [environment] in
+                try environment.sleepNow()
             }
         )
     }
 
     private func printStatus() throws {
-        let desired = try readDesired()
+        let configuration = try readConfiguration()
+        let policy = SleepPreventionPolicy(
+            configuration: configuration,
+            power: environment.currentPower(),
+            now: Date()
+        )
         let output = try environment.pmsetCustomOutput()
         let sleepDisabled = SleepDisabledStatus.isDisabled(pmsetOutput: output)
         let sleepDisabledText = switch sleepDisabled {
@@ -87,16 +134,20 @@ final class HelperRuntime: @unchecked Sendable {
         case nil:
             "unknown"
         }
+        let batteryText = policy.power.batteryPercent.map(String.init) ?? "unknown"
 
-        print("desired=\(desired.rawValue)")
+        print("desired=\(configuration.desired.rawValue)")
+        print("reason=\(policy.reason.label)")
+        print("battery=\(batteryText)")
+        print("onBattery=\(policy.power.isOnBattery)")
         print("sleepDisabled=\(sleepDisabledText)")
     }
 
     private func runDaemon() throws {
-        try applyGate()
+        try applyGate(sleepNowOnTransition: false)
         environment.startPeriodicRefresh(interval: 5) { [self] in
             do {
-                try applyGate()
+                try applyGate(sleepNowOnTransition: true)
             } catch {
                 fputs("\(error.localizedDescription)\n", stderr)
             }
@@ -122,6 +173,21 @@ enum HelperError: LocalizedError {
                 return "pmset exited with status \(status)"
             }
             return "pmset exited with status \(status): \(trimmed)"
+        }
+    }
+}
+
+private extension SleepPreventionReason {
+    var label: String {
+        switch self {
+        case .off:
+            "off"
+        case .keepingAwake:
+            "keepingAwake"
+        case .batteryLow:
+            "batteryLow"
+        case .durationExpired:
+            "durationExpired"
         }
     }
 }

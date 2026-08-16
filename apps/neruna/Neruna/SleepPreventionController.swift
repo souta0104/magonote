@@ -7,9 +7,12 @@ import ServiceManagement
 @MainActor
 @Observable
 final class SleepPreventionController {
-    private static let enabledDefaultsKey = "isEnabled"
+    private static let configurationDefaultsKey = "awakeConfiguration"
+    private static let legacyEnabledDefaultsKey = "isEnabled"
 
-    private(set) var isEnabled: Bool
+    private(set) var configuration: AwakeConfiguration
+    private(set) var power: PowerSnapshot
+    private(set) var now: Date
     private(set) var launchesAtLogin: Bool
     private(set) var lastErrorMessage: String?
 
@@ -17,6 +20,8 @@ final class SleepPreventionController {
     private let assertion: IdleSleepAssertion
     private let privilegedControl: PrivilegedSleepControl
     private var didStart = false
+    private var previouslyKeepingAwake: Bool?
+    private var refreshTask: Task<Void, Never>?
 
     init(
         defaults: UserDefaults = .standard,
@@ -26,16 +31,18 @@ final class SleepPreventionController {
         self.defaults = defaults
         self.assertion = assertion
         self.privilegedControl = privilegedControl
-        if defaults.object(forKey: Self.enabledDefaultsKey) == nil {
-            self.isEnabled = true
-        } else {
-            self.isEnabled = defaults.bool(forKey: Self.enabledDefaultsKey)
-        }
+        self.configuration = Self.loadConfiguration(from: defaults)
+        self.power = PowerSnapshotReader.current()
+        self.now = Date()
         self.launchesAtLogin = SMAppService.mainApp.status == .enabled
     }
 
+    var isEnabled: Bool {
+        configuration.desired == .on
+    }
+
     var policy: SleepPreventionPolicy {
-        SleepPreventionPolicy(isEnabled: isEnabled)
+        SleepPreventionPolicy(configuration: configuration, power: power, now: now)
     }
 
     var menuSymbolName: String {
@@ -50,22 +57,65 @@ final class SleepPreventionController {
         SleepPreventionStatusText.text(for: policy)
     }
 
+    var batteryGuardMenuTitle: String {
+        if let threshold = configuration.batteryThresholdPercent {
+            return "電池が \(threshold)% を下回ったら寝る"
+        }
+        return "電池が少なくても起き続ける"
+    }
+
+    var durationGuardMenuTitle: String {
+        if let hours = configuration.durationLimitHours {
+            return "\(hours) 時間たったら寝る"
+        }
+        return "時間制限なし"
+    }
+
     func start() async {
         guard !didStart else {
             return
         }
         didStart = true
 
+        if configuration.desired == .on, configuration.enabledAt == nil {
+            configuration.enabledAt = Date()
+            persistConfiguration()
+        }
+
         if launchesAtLogin == false {
             setLaunchAtLogin(true)
         }
 
         await applyCurrentState()
+        startRefreshLoop()
     }
 
     func toggleEnabled() async {
-        isEnabled.toggle()
-        persistEnabled()
+        if isEnabled {
+            configuration.desired = .off
+            configuration.enabledAt = nil
+            configuration.batteryGuardLatched = false
+        } else {
+            configuration.desired = .on
+            configuration.enabledAt = Date()
+            configuration.batteryGuardLatched = false
+        }
+        persistConfiguration()
+        await applyCurrentState()
+    }
+
+    func setBatteryThreshold(_ percent: Int?) async {
+        configuration.batteryThresholdPercent = AwakeConfiguration.sanitizedBatteryThreshold(percent)
+        if configuration.batteryThresholdPercent == nil {
+            configuration.batteryGuardLatched = false
+        }
+        persistConfiguration()
+        await applyCurrentState()
+    }
+
+    func setDurationHours(_ hours: Int?) async {
+        configuration.durationLimitSeconds = AwakeConfiguration.seconds(hours: hours)
+        persistConfiguration()
         await applyCurrentState()
     }
 
@@ -74,24 +124,60 @@ final class SleepPreventionController {
     }
 
     func quit() async {
-        isEnabled = false
-        persistEnabled()
+        configuration.desired = .off
+        configuration.enabledAt = nil
+        configuration.batteryGuardLatched = false
+        persistConfiguration()
         assertion.release()
+        refreshTask?.cancel()
         do {
-            try privilegedControl.apply(desired: .off)
+            try privilegedControl.apply(configuration: configuration)
         } catch {
             lastErrorMessage = error.localizedDescription
         }
         NSApplication.shared.terminate(nil)
     }
 
+    private func startRefreshLoop() {
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(15))
+                } catch {
+                    return
+                }
+                await self?.refresh()
+            }
+        }
+    }
+
+    private func refresh() async {
+        power = PowerSnapshotReader.current()
+        now = Date()
+        await applyCurrentState()
+    }
+
     private func applyCurrentState() async {
-        persistEnabled()
+        power = PowerSnapshotReader.current()
+        now = Date()
+
+        let currentPolicy = policy
+        let next = currentPolicy.advancing()
+        if next != configuration {
+            configuration = next
+            persistConfiguration()
+        }
+
+        if previouslyKeepingAwake == true, !currentPolicy.shouldKeepAwake {
+            triggerSleepNow()
+        }
+        previouslyKeepingAwake = currentPolicy.shouldKeepAwake
+
         await applyIdleAssertion()
 
         do {
             try privilegedControl.ensureInstalled()
-            try privilegedControl.apply(desired: isEnabled ? .on : .off)
+            try privilegedControl.apply(configuration: configuration)
             lastErrorMessage = nil
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -113,8 +199,38 @@ final class SleepPreventionController {
         }
     }
 
-    private func persistEnabled() {
-        defaults.set(isEnabled, forKey: Self.enabledDefaultsKey)
+    private func triggerSleepNow() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: SleepDisabledCommand.pmsetPath)
+        process.arguments = SleepDisabledCommand.sleepNowArguments
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistConfiguration() {
+        if let text = try? configuration.fileContents() {
+            defaults.set(text, forKey: Self.configurationDefaultsKey)
+        }
+    }
+
+    private static func loadConfiguration(from defaults: UserDefaults) -> AwakeConfiguration {
+        if let text = defaults.string(forKey: configurationDefaultsKey),
+           let configuration = try? AwakeConfiguration.parse(fileContents: text)
+        {
+            return configuration
+        }
+
+        if defaults.object(forKey: legacyEnabledDefaultsKey) != nil {
+            return AwakeConfiguration(
+                desired: defaults.bool(forKey: legacyEnabledDefaultsKey) ? .on : .off
+            )
+        }
+
+        return AwakeConfiguration(desired: .on)
     }
 
     private func setLaunchAtLogin(_ enabled: Bool) {
