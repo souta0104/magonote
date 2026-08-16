@@ -1,6 +1,6 @@
 # 寝るな (Neruna)
 
-MacBook の蓋を閉じても、電源接続中はプロセスを動かし続けるための macOS メニューバーアプリ。
+MacBook の蓋を閉じてもプロセスを動かし続けるための macOS メニューバーアプリ。
 
 ## Context
 
@@ -12,15 +12,15 @@ IOKit の sleep assertion や `caffeinate` はアイドル時のスリープし�
 
 - アプリ名は「寝るな」、バンドルは `Neruna.app`、Bundle ID は `app.soprog.magonote.neruna`
 - Magonote 本体には入れない。認証も API もなく、起動寿命も権限モデルも Reader と異なるため、独立した macOS アプリにする
-- 蓋を閉じたまま起き続けるのは電源接続中だけにする。電池では蓋を閉じたらスリープする
-- その安全条件はメニューバーアプリではなく、root の LaunchDaemon が守る
+- 寝るながオンなら、電源の有無に関係なく蓋を閉じてもスリープしない
+- `pmset disablesleep` はメニューバーアプリではなく、root の LaunchDaemon が維持する
 - ログイン時に起動する。初回起動時は「寝るな」をオンにする
 
 ## ユビキタス言語
 
 | 概念 | 定義 | コード | UI |
 |---|---|---|---|
-| 寝るな | 蓋を閉じても、電源接続中はスリープしないようにする機能全体 | `Neruna` | 寝るな |
+| 寝るな | 蓋を閉じてもスリープしないようにする機能全体 | `Neruna` | 寝るな |
 | Desired awake | 利用者が「起きていてほしい」と望んでいるか | `DesiredAwakeState` | オン / オフ |
 | Lid-close sleep | 蓋を閉じたときにシステムがスリープすること | `shouldKeepAwakeWithLidClosed` | 蓋を閉じても起きている |
 | Idle sleep | 操作がないときにシステムがスリープすること | `shouldPreventIdleSleep` | (メニューには出さない) |
@@ -44,20 +44,19 @@ apps/neruna/
 
 `SleepPreventionPolicy` が唯一の判定表である。
 
-- 寝るながオン、かつ電源接続中 → `pmset -a disablesleep 1`
-- それ以外 → `pmset -a disablesleep 0`
-- 寝るながオン → アプリが IOKit の `PreventUserIdleSystemSleep` を取る
+- 寝るながオン → `pmset -a disablesleep 1`、アプリが IOKit の `PreventUserIdleSystemSleep` を取る
+- 寝るながオフ → `pmset -a disablesleep 0`
 
 ### neruna-helper
 
 | 引数 | 誰が呼ぶか | すること |
 |---|---|---|
-| `apply-on` | アプリが `sudo -n` で呼ぶ | desired を on にし、今の電源で `pmset` を合わせる |
+| `apply-on` | アプリが `sudo -n` で呼ぶ | desired を on にし、`disablesleep 1` にする |
 | `apply-off` | アプリが `sudo -n` で呼ぶ | desired を off にし、`disablesleep 0` にする |
-| `status` | アプリが `sudo -n` で呼ぶ | desired / 電源 / SleepDisabled を出す |
-| `run` | LaunchDaemon だけ | 起動時・電源変化・定期確認で policy を再適用する |
+| `status` | アプリが `sudo -n` で呼ぶ | desired / SleepDisabled を出す |
+| `run` | LaunchDaemon だけ | 起動時と定期確認で policy を再適用する |
 
-LaunchDaemon はアプリが死んでいても、電池になったら `disablesleep 0` に戻す。
+LaunchDaemon はアプリが死んでいても、desired が on なら `disablesleep 1` を維持する。
 
 ### メニューバーアプリ
 
@@ -69,7 +68,6 @@ LaunchDaemon はアプリが死んでいても、電池になったら `disables
 
 ## 入れないもの
 
-- 電池でも蓋を閉じたまま起き続けるオプション
 - 外部ディスプレイ前提のクラムシェルモード
 - 指定時間だけ起きるタイマー
 - プロセス名を指定して起きる機能

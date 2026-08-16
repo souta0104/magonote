@@ -39,7 +39,6 @@ private struct MenuBarContentView: View {
         }
 
         Text(controller.statusText)
-        Text("電源接続中だけ、蓋を閉じてもスリープしません")
 
         if let message = controller.lastErrorMessage {
             Text(message)

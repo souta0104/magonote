@@ -69,9 +69,6 @@ final class HelperRuntime: @unchecked Sendable {
             readDesired: { [self] in
                 try self.readDesired()
             },
-            isOnACPower: { [environment] in
-                environment.isOnACPower()
-            },
             setKeepAwakeWithLidClosed: { [environment] keepAwake in
                 try environment.setKeepAwakeWithLidClosed(keepAwake)
             }
@@ -80,7 +77,6 @@ final class HelperRuntime: @unchecked Sendable {
 
     private func printStatus() throws {
         let desired = try readDesired()
-        let onAC = environment.isOnACPower()
         let output = try environment.pmsetCustomOutput()
         let sleepDisabled = SleepDisabledStatus.isDisabled(pmsetOutput: output)
         let sleepDisabledText = switch sleepDisabled {
@@ -93,19 +89,11 @@ final class HelperRuntime: @unchecked Sendable {
         }
 
         print("desired=\(desired.rawValue)")
-        print("ac=\(onAC)")
         print("sleepDisabled=\(sleepDisabledText)")
     }
 
     private func runDaemon() throws {
         try applyGate()
-        environment.startPowerSourceMonitor { [self] in
-            do {
-                try applyGate()
-            } catch {
-                fputs("\(error.localizedDescription)\n", stderr)
-            }
-        }
         environment.startPeriodicRefresh(interval: 5) { [self] in
             do {
                 try applyGate()

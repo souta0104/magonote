@@ -2,32 +2,24 @@ import NerunaCore
 import XCTest
 
 final class SleepPreventionPolicyTests: XCTestCase {
-    func testKeepsAwakeWithLidClosedOnlyWhenEnabledOnACPower() {
+    func testKeepsAwakeWithLidClosedWheneverEnabled() {
         XCTAssertEqual(
-            SleepPreventionPolicy(isEnabled: true, isOnACPower: true).shouldKeepAwakeWithLidClosed,
+            SleepPreventionPolicy(isEnabled: true).shouldKeepAwakeWithLidClosed,
             true
         )
         XCTAssertEqual(
-            SleepPreventionPolicy(isEnabled: true, isOnACPower: false).shouldKeepAwakeWithLidClosed,
-            false
-        )
-        XCTAssertEqual(
-            SleepPreventionPolicy(isEnabled: false, isOnACPower: true).shouldKeepAwakeWithLidClosed,
-            false
-        )
-        XCTAssertEqual(
-            SleepPreventionPolicy(isEnabled: false, isOnACPower: false).shouldKeepAwakeWithLidClosed,
+            SleepPreventionPolicy(isEnabled: false).shouldKeepAwakeWithLidClosed,
             false
         )
     }
 
     func testPreventsIdleSleepWheneverEnabled() {
         XCTAssertEqual(
-            SleepPreventionPolicy(isEnabled: true, isOnACPower: false).shouldPreventIdleSleep,
+            SleepPreventionPolicy(isEnabled: true).shouldPreventIdleSleep,
             true
         )
         XCTAssertEqual(
-            SleepPreventionPolicy(isEnabled: false, isOnACPower: true).shouldPreventIdleSleep,
+            SleepPreventionPolicy(isEnabled: false).shouldPreventIdleSleep,
             false
         )
     }
@@ -93,24 +85,18 @@ final class DesiredAwakeStateTests: XCTestCase {
 }
 
 final class SleepGateTests: XCTestCase {
-    func testAppliesPolicyFromDesiredStateAndPowerSource() throws {
-        let state = GateState(desired: .on, onAC: true)
+    func testAppliesPolicyFromDesiredState() throws {
+        let state = GateState(desired: .on)
 
         let gate = SleepGate(
             readDesired: { state.desired },
-            isOnACPower: { state.onAC },
             setKeepAwakeWithLidClosed: { state.applied = $0 }
         )
 
         try gate.apply()
         XCTAssertEqual(state.applied, true)
 
-        state.onAC = false
-        try gate.apply()
-        XCTAssertEqual(state.applied, false)
-
         state.desired = .off
-        state.onAC = true
         try gate.apply()
         XCTAssertEqual(state.applied, false)
     }
@@ -118,55 +104,33 @@ final class SleepGateTests: XCTestCase {
 
 private final class GateState: @unchecked Sendable {
     var desired: DesiredAwakeState
-    var onAC: Bool
     var applied: Bool?
 
-    init(desired: DesiredAwakeState, onAC: Bool) {
+    init(desired: DesiredAwakeState) {
         self.desired = desired
-        self.onAC = onAC
     }
 }
 
 final class SleepPreventionStatusTextTests: XCTestCase {
     func testDescribesEachPolicy() {
         XCTAssertEqual(
-            SleepPreventionStatusText.text(
-                for: SleepPreventionPolicy(isEnabled: false, isOnACPower: true)
-            ),
+            SleepPreventionStatusText.text(for: SleepPreventionPolicy(isEnabled: false)),
             "オフ。蓋を閉じるとスリープします"
         )
         XCTAssertEqual(
-            SleepPreventionStatusText.text(
-                for: SleepPreventionPolicy(isEnabled: true, isOnACPower: true)
-            ),
-            "電源接続中。蓋を閉じても起きています"
-        )
-        XCTAssertEqual(
-            SleepPreventionStatusText.text(
-                for: SleepPreventionPolicy(isEnabled: true, isOnACPower: false)
-            ),
-            "電池駆動中。蓋を閉じるとスリープします"
+            SleepPreventionStatusText.text(for: SleepPreventionPolicy(isEnabled: true)),
+            "オン。蓋を閉じても起きています"
         )
     }
 
     func testPicksSymbolForEachPolicy() {
         XCTAssertEqual(
-            SleepPreventionStatusText.symbolName(
-                for: SleepPreventionPolicy(isEnabled: false, isOnACPower: true)
-            ),
+            SleepPreventionStatusText.symbolName(for: SleepPreventionPolicy(isEnabled: false)),
             "moon.zzz"
         )
         XCTAssertEqual(
-            SleepPreventionStatusText.symbolName(
-                for: SleepPreventionPolicy(isEnabled: true, isOnACPower: true)
-            ),
+            SleepPreventionStatusText.symbolName(for: SleepPreventionPolicy(isEnabled: true)),
             "cup.and.saucer.fill"
-        )
-        XCTAssertEqual(
-            SleepPreventionStatusText.symbolName(
-                for: SleepPreventionPolicy(isEnabled: true, isOnACPower: false)
-            ),
-            "cup.and.saucer"
         )
     }
 }

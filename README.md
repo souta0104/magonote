@@ -7,7 +7,7 @@ macOS / iOS それぞれ 1 つのアプリ (どちらも「Magonote」) がツ�
 サーバーに保存し、iPhone の見やすいビューワーで読む。
 
 システム寄りの補助アプリとして、macOS メニューバーアプリ **寝るな** もある。
-電源接続中は MacBook の蓋を閉じてもスリープせず、codex などのプロセスを動かし続けられる。
+MacBook の蓋を閉じてもスリープせず、codex などのプロセスを動かし続けられる。
 
 設計の詳細は [`docs/superpowers/specs/2026-07-10-magonote-reader-design.md`](docs/superpowers/specs/2026-07-10-magonote-reader-design.md) を参照。
 進捗・意思決定ログは Linear [DEV-1](https://linear.app/soprog/issue/DEV-1/magonote-reader-爆誕) 配下で管理している。
@@ -106,8 +106,8 @@ Xcode で Team を選択して署名し、Run する。macOS 版は初回起動�
 
 ### 寝るな (`apps/neruna/`)
 
-蓋を閉じたまま起き続けるのは電源接続中だけである。電池では蓋を閉じるとスリープする。
-この条件はメニューバーアプリではなく root の LaunchDaemon が守る。
+寝るながオンのあいだは、蓋を閉じてもスリープしない。
+この設定はメニューバーアプリではなく root の LaunchDaemon が維持する。
 
 ```sh
 cd apps/neruna
