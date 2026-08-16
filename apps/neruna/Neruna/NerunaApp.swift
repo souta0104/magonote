@@ -3,20 +3,28 @@ import SwiftUI
 
 @main
 struct NerunaApp: App {
-    @State private var controller = SleepPreventionController()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarContentView()
-                .environment(controller)
-                .task {
-                    await controller.start()
-                }
+                .environment(appDelegate.controller)
         } label: {
-            Image(systemName: controller.menuSymbolName)
-                .accessibilityLabel(controller.menuAccessibilityLabel)
+            Image(systemName: appDelegate.controller.menuSymbolName)
+                .accessibilityLabel(appDelegate.controller.menuAccessibilityLabel)
         }
         .menuBarExtraStyle(.menu)
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let controller = SleepPreventionController()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Task {
+            await controller.start()
+        }
     }
 }
 

@@ -118,7 +118,7 @@ final class SleepPreventionController {
     private func applyIdleAssertion() async {
         do {
             if policy.shouldPreventIdleSleep {
-                try assertion.acquire(reason: "寝るな: keep processes running")
+                try assertion.acquire(reason: "neruna.prevent-idle-sleep")
             } else {
                 assertion.release()
             }
